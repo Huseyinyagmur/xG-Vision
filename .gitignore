@@ -1,0 +1,30 @@
+# Data (re-downloadable with `python -m src.data_download`)
+data/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Model artefacts / large files
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.parquet
+*.npy
+*.npz
+runs/
+wandb/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
