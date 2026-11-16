@@ -7,3 +7,4 @@ mplsoccer>=1.2
 requests
 tqdm
 scikit-learn
+pytest
