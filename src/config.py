@@ -62,3 +62,36 @@ N_CHANNELS = len(CHANNELS)
 # ---------------------------------------------------------------------------
 SPLIT_FRACTIONS = {"train": 0.70, "val": 0.15, "test": 0.15}
 SEED = 42
+
+# ---------------------------------------------------------------------------
+# Scalar ("extra") model inputs, concatenated to the CNN features before the head.
+# Body part is one-hot over these groups; left/right foot are merged so that
+# the y-mirror augmentation stays valid.
+# ---------------------------------------------------------------------------
+BODY_PART_GROUPS = ("head", "foot", "other")
+BODY_PART_MAP = {"Head": "head", "Right Foot": "foot", "Left Foot": "foot", "Other": "other"}
+N_EXTRA_FEATURES = len(BODY_PART_GROUPS)
+
+# ---------------------------------------------------------------------------
+# Training (step 2). Per-model overrides live in MODEL_CONFIGS.
+# ---------------------------------------------------------------------------
+MODELS_DIR = PROJECT_ROOT / "models"          # checkpoints + history (not committed)
+
+BATCH_SIZE = 256
+NUM_WORKERS = 6
+MAX_EPOCHS = 40
+EARLY_STOP_PATIENCE = 5                       # epochs without val log-loss improvement
+WEIGHT_DECAY = 1e-4
+LR_PLATEAU_FACTOR = 0.5
+LR_PLATEAU_PATIENCE = 2
+AMP_DTYPE = "bfloat16"                        # "bfloat16", "float16" or "none"
+BN_RECAL_BATCHES = 40                         # "precise BN" before every validation (see train.py)
+HEAD_HIDDEN = 64
+HEAD_DROPOUT = 0.3
+
+MODEL_CONFIGS = {
+    # lr: head / new layers; backbone_lr: pretrained layers (None -> same as lr)
+    "small_cnn": {"lr": 1e-3, "backbone_lr": None},
+    "resnet18": {"lr": 1e-3, "backbone_lr": 1e-4, "maxpool": True},
+    "resnet18_nomaxpool": {"lr": 1e-3, "backbone_lr": 1e-4, "maxpool": False},
+}
