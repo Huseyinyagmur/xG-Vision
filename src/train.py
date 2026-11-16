@@ -5,7 +5,7 @@
     python -m src.train --model resnet18 --subset 2000 --epochs 3      # smoke test
     python -m src.train --bench-loader                                 # DataLoader speed
 
-Outputs go to models/<run_name>/: best.pt, last.pt, history.csv, config.json, val_predictions.csv,
+Outputs go to models/<run_name>/: train.log, best.pt, last.pt, history.csv, config.json, val_predictions.csv,
 and results/plots/training_curves_<run_name>.png. The test split is never touched here.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ from src import config as C
 from src.dataset import PhaseBatchSampler, ShotDataset, load_shots
 from src.evaluate import compute_metrics, format_table, metrics_by_group, reference_predictions
 from src.models import build_model, count_parameters
-from src.utils import get_device, seed_everything
+from src.utils import get_device, seed_everything, tee_output
 
 AMP_DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16, "none": None}
 
@@ -307,4 +307,6 @@ if __name__ == "__main__":
     if args.bench_loader:
         benchmark_loader(load_shots("train"), args.batch_size, args.bench_workers)
     else:
-        train(args)
+        # everything printed (and any traceback) also goes to models/<run>/train.log
+        with tee_output(C.MODELS_DIR / (args.run_name or args.model) / "train.log"):
+            train(args)
