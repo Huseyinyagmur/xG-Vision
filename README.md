@@ -6,9 +6,9 @@ picture of the situation: every shot is turned into a multi-channel bird's-eye "
 attacking half (the shooter, teammates, defenders, goalkeeper and the shooting cone), built from
 the player positions StatsBomb records at the moment of the shot (*freeze frames*).
 
-> **Status:** steps 1–3 are done: data pipeline, CNN training, and a test-set evaluation
+> **Status:** steps 1–4 are done: data pipeline, CNN training, a test-set evaluation
 > against StatsBomb xG and logistic-regression baselines (match-level bootstrap CIs,
-> calibration, Grad-CAM). **Headline:** from the pitch picture plus the body part, a 1.2 M
+> calibration, Grad-CAM), and quantitative sanity tests with xG heat maps. **Headline:** from the pitch picture plus the body part, a 1.2 M
 > parameter CNN gets within 0.005 log loss of StatsBomb's xG and clearly beats distance/angle
 > baselines, but StatsBomb's model is still significantly better on the test split.
 
@@ -19,8 +19,8 @@ the player positions StatsBomb records at the moment of the shot (*freeze frames
 | 1 | Data pipeline: StatsBomb Open Data → cleaned shot table, match-level split, multi-channel pitch tensors, PyTorch `Dataset`, sanity plots | ✅ done |
 | 2 | Models: small CNN from scratch vs. ImageNet ResNet18 (6-channel first conv), body part as an extra input, training loop with early stopping | ✅ done |
 | 3 | Evaluation on the test split: log loss / Brier / ROC-AUC, calibration, comparison with StatsBomb xG and a distance + angle logistic regression, interesting shots, Grad-CAM | ✅ done |
-| 4 | Sanity tests: move the shooter, add a defender in the shooting lane, remove the goalkeeper; xG heat map over the box | ⏳ next |
-| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | ⏳ planned |
+| 4 | Sanity tests: move the shooter, add a defender in the shooting lane, remove the goalkeeper; xG heat map over the box | ✅ done |
+| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | ⏳ next |
 | 6 | (optional) Broadcast frame → player detection + pitch homography → bird's-eye view → xG | ⏳ planned |
 
 ## Data
@@ -178,6 +178,102 @@ The pretrained ResNet18 starts to overfit after epoch 5, while the small CNN imp
 ![SmallCNN training curves](results/plots/training_curves_small_cnn.png)
 ![ResNet18 training curves](results/plots/training_curves_resnet18.png)
 
+## Sanity tests (step 4)
+
+Does the CNN react to the situation the way football logic says it should? Every one of the
+14,166 test shots is edited in a controlled way, re-rendered and re-scored by the SmallCNN
+(seed 42); everyone else stays where they are. A change smaller than 0.001 counts as "no
+change". Situations that (almost) never occur in training are flagged **OOD** and kept apart:
+shots without a goalkeeper (0.1% of the data) and headers from 25+ yd.
+
+| Edit | Shots | Expected | In expected direction | Opposite | Mean Δ xG |
+|---|---|---|---|---|---|
+| 1a shooter 3 yd closer to the goal centre | 13,909 | ↑ | 85% | 12% | +0.091 |
+| 1b shooter 3 yd farther away | 14,138 | ↓ | **67%** | **27%** | −0.027 |
+| 2a defender 1.5 yd in front of the shooter, on the shot line | 14,143 | ↓ | 99.6% | 0.2% | −0.061 |
+| 2b defender halfway along the shot line | 14,146 | ↓ | **64%** | **19%** | −0.014 |
+| 3a goalkeeper removed **[OOD]** | 14,147 | ↑ | 99% | 1% | +0.114 |
+| 3b goalkeeper 3 yd sideways, away from the shot line | 10,843 | ↑ | 89% | 6% | +0.059 |
+| 4a foot → head (same position) | 8,504 | ↓ | 100% | 0% | −0.050 |
+| 4b head → foot | 2,335 | ↑ | 100% | 0% | +0.071 |
+
+- **Control (2c).** The halfway defender moved 6 yd sideways, out of the shooting cone, changes
+  xG less than the same defender in the cone, in front of the shooter (2a) *and* halfway (2b),
+  for 81% of shots. It still lowers xG slightly in 84% of them (mean −0.003); a defender nearby
+  plausibly adds pressure.
+- **Goalkeeper 3 yd forward (3c, no expected direction).** xG mostly *rises* (+0.024 on
+  average, up for 79–95% of shots beyond 8 yd). In the data a goalkeeper off the line often
+  means a beaten or rushing keeper, and the model has learned that association.
+- **Mirror symmetry (5).** The mirrored input is exactly the row-flipped tensor, yet predictions
+  differ by 0.012 on average (95th percentile 0.045, max 0.15), despite mirror augmentation in
+  training. This is why mirror test-time augmentation helps a little.
+- **CNN vs. LogReg.** The logistic regression always moves in the expected direction when the
+  shooter moves (99.7%), as it must, since it only sees distance and angle. The CNN weighs
+  position against the surrounding defenders.
+
+![Change in xG per edit and expected-direction share by distance](results/plots/sanity_effects_test.png)
+
+Example shots (one per category, chosen by a fixed-seed rule, not by hand), with the edited
+situation and the new xG:
+
+![Sanity edits on example shots](results/plots/sanity_examples_test.png)
+
+### xG heat maps
+
+The shooter is moved over a 1 yd grid (x 78–119, y 10–70) while the rest of the situation stays
+fixed: (a) only a goalkeeper on the goal line (OOD: no outfield players), (b) the defence and
+teammates of two real test frames, chosen by rule: a crowded box (10 defenders) and a counter
+(at most 2 defenders within 30 yd). Foot and head are mapped separately.
+
+| xG at the penalty spot (108, 40), foot | |
+|---|---|
+| LogReg (distance + angle + body part), any frame | 0.198 |
+| CNN, keeper only | 0.378 |
+| CNN, counter frame | 0.250 |
+| CNN, crowded frame | 0.105 |
+
+The defence is clearly taken into account: in the crowded frame, xG falls at 96% of the
+grid points inside the box (by 0.13 on average, by up to 0.56 among the defenders in front of goal) and in
+the counter frame at 84% of them. With no outfield players at all, the CNN is far above the
+logistic regression, which averages over typical defences.
+
+![Heat maps: crowded frame](results/plots/heatmap_crowded.png)
+
+Keeper-only maps, the counter frame and all tables: [`results/heatmaps.md`](results/heatmaps.md),
+[`heatmap_empty.png`](results/plots/heatmap_empty.png),
+[`heatmap_counter.png`](results/plots/heatmap_counter.png). Sanity tables:
+[`results/sanity_test.md`](results/sanity_test.md).
+
+### Unexpected behaviour
+
+Real inconsistencies (in-distribution situations):
+
+1. **Stepping back can raise xG.** Moving the shooter 3 yd away raises xG for 27% of shots. These
+   cases concentrate where the move takes the shooter away from the nearest defender (34% wrong
+   when the gap grows by > 1 yd, 5% when it shrinks). Likewise, moving closer goes wrong mostly
+   when it brings the shooter onto a defender (24% vs. 5%). The trade-off between distance and
+   pressure is reasonable, but its size (up to +0.17 xG for stepping back) looks too large.
+2. **A defender halfway to goal sometimes raises xG** (19% of shots). This happens mostly when the
+   added defender stands 3–10 yd in front of the goalkeeper (27–34%), rarely when it stands next to the
+   keeper (7%). A screened goalkeeper is a possible but unverified
+   explanation.
+3. **Goal-line edge artefact.** On the empty pitch, shooters 1 yd from the goal line get high xG
+   even 28 yd wide of the goal (0.45 at x = 119 vs. 0.08 at x = 118, LogReg 0.02). Only 112
+   training shots come from there (x ≥ 118.5, wide of the posts), and the shooter blob touches
+   the edge of the tensor. Shots from such positions should not be trusted.
+4. **Left/right asymmetry** of up to 0.12 xG on the empty pitch (at (113, 33)) and 0.15 on real
+   shots, see above.
+
+Out-of-distribution results, reported for completeness: removing the goalkeeper raises xG for
+99% of shots (+0.11) and the keeper-only maps are far above LogReg; both are plausible in
+direction but the model has (almost) never seen these situations. Headers from 25+ yd behave
+like foot shots scaled down.
+
+A limitation of the test design: for a shot from an angle, moving the goalkeeper perpendicular
+to the shot line also pushes the keeper towards the goal line; moves that would end behind it are
+skipped (3,303 shots), and the largest wrong-direction 3b cases are of this kind
+([`sanity_failures_test.png`](results/plots/sanity_failures_test.png)).
+
 ## Plots
 
 **Data sanity check.** The observed goal rate falls with distance and closely follows the mean
@@ -223,6 +319,8 @@ python -m src.evaluate --split val             # full report: metrics, bootstrap
 python -m src.interpret --compare-layers       # Grad-CAM at several layers (val), to choose GRADCAM_LAYER
 python -m src.evaluate --split test            # same report on the test split (run once, at the end)
 python -m src.interpret --split test           # disagreement shots with Grad-CAM
+python -m src.sanity --split test              # step 4: sanity tests on every test shot (~2-3 min)
+python -m src.heatmap                          # step 4: xG heat maps (< 1 min)
 
 python -m pytest tests -q                      # tests needing data/shots.pkl are skipped without it
 ```
@@ -261,9 +359,12 @@ src/
   evaluate.py       # metrics (+ by gender), match-level bootstrap, calibration, reports
   gradcam.py        # Grad-CAM for the SmallCNN
   interpret.py      # Grad-CAM layer comparison, shots where CNN and StatsBomb disagree
+  perturb.py        # controlled edits of a shot (move shooter, add defender, move/remove keeper...)
+  sanity.py         # sanity tests over all test shots, diagnostics, plots
+  heatmap.py        # xG heat maps over a shooter grid, CNN vs. LogReg
   utils.py          # seeding, device, log file
   visualize.py      # pitch plots, channel plots, data overview
-tests/              # renderer vs. reference, mirror = row flip, models, sampler, bootstrap/AUC, Grad-CAM
+tests/              # renderer vs. reference, mirror = row flip, models, sampler, bootstrap/AUC, Grad-CAM, shot edits
 results/            # metric reports (markdown + csv); plots/ holds the figures shown above
 data/, models/      # downloaded data and trained weights (not in the repo)
 ```

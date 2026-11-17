@@ -37,9 +37,9 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
    uyarlanmış) karşılaştır. Eğitim döngüsü, early stopping, en iyi modeli kaydetme.
 3. ✅ **Değerlendirme:** maç bazında test, log loss, Brier, ROC-AUC, kalibrasyon grafiği; StatsBomb xG
    ve baseline (sadece mesafe + açı ile lojistik regresyon) ile karşılaştırma; ilginç test pozisyonları; Grad-CAM.
-4. ⏭️ **Mantık testleri:** şutçuyu yaklaştır/uzaklaştır, araya savunmacı koy, kaleciyi çıkar → xG beklenen
+4. ✅ **Mantık testleri:** şutçuyu yaklaştır/uzaklaştır, araya savunmacı koy, kaleciyi çıkar → xG beklenen
    yönde değişiyor mu? Şutçuyu ceza sahasının her noktasına koyup xG ısı haritası.
-5. **İnteraktif taktik tahtası:** Streamlit veya Gradio, oyuncuları sürükle-bırak → anlık xG.
+5. ⏭️ **İnteraktif taktik tahtası:** Streamlit veya Gradio, oyuncuları sürükle-bırak → anlık xG.
 6. (İsteğe bağlı) Yayın karesi → YOLO ile oyuncu tespiti → saha anahtar noktaları + homografi → kuşbakışı → xG.
 
 ### Değerlendirme ilkeleri
@@ -48,10 +48,10 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
   sonradan kalibre et ya da düz BCE tercih et.
 - Bölme **maç bazında** yapılır, aynı maçın şutları farklı bölümlerde olamaz (`split` sütunu sabit, değiştirme).
 
-## Mevcut durum (3. adım tamamlandı, push kullanıcı onayını bekliyor)
+## Mevcut durum (4. adım tamamlandı, push kullanıcı onayını bekliyor)
 
 1. adım `0eff913` ile push edildi. 2. adım commit'leri: `06d6435` (CLAUDE.md), `9484875` (render
-hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım tek commit'te (değerlendirme + README/CLAUDE.md), push kullanıcı onayını bekliyor.
+hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım: `6d72da3` (push edildi). 4. adım tek commit'te, push onay bekliyor.
 README İngilizce ve portföy odaklı; her adım bitince README'nin yol haritası ve sonuçlar bölümü güncellenmeli.
 
 ### Dosyalar
@@ -67,7 +67,10 @@ src/baselines.py      # lojistik regresyon: mesafe + açı (+ vücut bölgesi); 
 src/evaluate.py       # metrikler, maç bazlı bootstrap, kalibrasyon kutuları, rapor; `python -m src.evaluate --split val|test`
 src/gradcam.py        # GradCAM (hook'larla), smallcnn_layer(model, blok)
 src/interpret.py      # --compare-layers (val), --split test: CNN ile StatsBomb'un en çok ayrıştığı şutlar + Grad-CAM
-src/utils.py          # seed_everything, get_device, tee_output (log dosyası)
+src/perturb.py        # Shot(x, y, ff, body) + saf düzenlemeler (şutçu taşı, savunmacı ekle, kaleci çıkar/kaydır...), OOD işaretleri
+src/sanity.py         # 4. adım mantık testleri (tüm test şutları), tanılama tabloları, grafikler; `--split test`
+src/heatmap.py        # şutçu ızgarası üzerinde xG ısı haritaları (kaleci tek / kalabalık / kontra), CNN vs LogReg
+src/utils.py          # seed_everything, get_device, tee_output, free_memory_gb, pick_num_workers, is_memory_error
 src/visualize.py      # saha çizimleri, kanal grafikleri, veri özeti; `python -m src.visualize`
 tests/                # render, aynalama, modeller, sampler, ağırlıklı AUC / bootstrap / kalibrasyon, Grad-CAM
 results/              # metrics_{val,test}.md|csv, interesting_test.md
@@ -136,6 +139,9 @@ freeze_frame (np.ndarray N×4: [x, y, teammate, is_gk]), n_players, has_gk, is_g
 - Hız (RTX 4050 Laptop): ilk epoch ~105 sn (worker başlatma + cuDNN autotune), sonra ~40–45 sn/epoch.
   Tepe VRAM: SmallCNN 2,56 GB, ResNet18 1,62 GB, maxpool'suz ResNet18 ~3,4 GB (sentetik ölçüm).
 - Ağır işler (oyun vb.) açıkken eğitim çok yavaşlıyor / bellek hatası veriyor; ölçümden önce kontrol et.
+- **Kullanıcı kuralı:** kullanıcı iş sırasında oyun oynayabilir (Valorant ~5 GB RAM + GPU). DataLoader'lı işlerden önce
+  boş belleği kontrol et; boş RAM veya commit < 6 GB ise num_workers = 2 (`pick_num_workers`). Bellek hatasında
+  worker sayısını düşürüp tekrar dene (`sanity.predict_logits` bunu otomatik yapıyor). Süre ölçülmeyen adımlarda yavaşlık sorun değil.
 - stdin'den (`python - <<EOF`) worker'lı DataLoader çalıştırılamaz (spawn ana dosyayı bulamaz); betik dosyası kullan.
 
 ### Sonuçlar (16 Kasım 2026'da yerelde indirilen veri)
@@ -206,6 +212,20 @@ freeze_frame (np.ndarray N×4: [x, y, teammate, is_gk]), n_players, has_gk, is_g
 - CNN'in StatsBomb'dan çok yüksek dediği şutlarda vole/yarım vole/aşırtma oranı yüksek (CNN teknik bilgisini görmüyor).
 - Grad-CAM sınırlı açıklayıcı: GAP yüzünden boş alanları da vurguluyor, yalnızca pozitif kanıt. README'de not edildi.
 
-### 4. adım için notlar
-- Mantık testleri `load_checkpoint` + `src.pitch_tensor.render_shot` ile freeze frame'i değiştirerek yapılabilir.
-- Ek skalerler (technique, first_time...) StatsBomb ile farkın olası kaynağı; eklemeden önce kullanıcıya sor.
+### 4. adım: mantık testleri ve ısı haritaları (17 Kasım 2026)
+- Model SmallCNN seed 42, test split'inin tamamı. Adım 3 yd; |Δp| < 0,001 "değişmedi". OOD: kalecisiz şut,
+  25+ yd kafa, sadece kaleci senaryosu (tablolarda ayrı). Kullanıcı kararları: 3c betimleyici; 2c ölçütü
+  |Δ2c| < |Δ2a| ve < |Δ2b|; 3b şut çizgisine dik, çizgiden uzağa; ızgara x 78–119, y 10–70; 2 gerçek pozisyon.
+- 3b'de kaleci kale çizgisinin arkasına taşacaksa şut atlanıyor (kırpma yok; 3.303 şut).
+- Sonuçlar (beklenen yön oranı, OOD hariç): 1a %85, 1b **%67**, 2a %99,6, 2b **%64**, 3a [OOD] %99, 3b %89,
+  4a/4b %100. 2c ölçütü %81. 3c: xG çoğunlukla artıyor (+0,024). Aynalama: ort. |Δp| 0,012, en fazla 0,15.
+- Beklenmedik (gerçek): (1) geri adım xG'yi artırabiliyor; savunmacıdan uzaklaşmaya bağlı (mesafe/baskı takası,
+  büyüklüğü fazla). (2) Yarı yoldaki savunmacı kaleciden 3–10 yd öndeyse xG'yi sıkça artırıyor. (3) Kale çizgisi
+  kenar artefaktı: x = 119'da 28 yd açıkta bile xG ~0,45 (eğitimde oradan 112 şut). (4) Sol/sağ asimetri.
+- Isı haritası: kalabalık pozisyonda ceza sahası noktalarının %96'sında xG düşüyor (ort. −0,13).
+
+### 5. adım için notlar
+- Taktik tahtası `perturb.Shot` + `render_shot` + `load_checkpoint` ile kurulabilir; kenar artefaktı nedeniyle
+  x ≥ 118,5 ve direk dışı konumlar için arayüzde uyarı göstermeyi kullanıcıya öner.
+- **Olası v2 (ertelendi, kullanıcı kararı):** technique + first_time skaler girdi. StatsBomb ile farkın olası kaynağı.
+  Testten sonra eklendiği için sonuçları **post-hoc** olarak raporlanacak (ana test sonuçlarının yerine geçmez).

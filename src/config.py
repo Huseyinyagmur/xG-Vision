@@ -144,3 +144,17 @@ CALIBRATION_BINS = 15                         # equal-count bins
 INTERESTING_MODEL = "small_cnn"               # compared with StatsBomb xG for the example shots
 INTERESTING_PER_GROUP = 3                     # per direction: 3 goals + 3 non-goals
 GRADCAM_LAYER = 2      # SmallCNN block (20x15 map), chosen on val with `python -m src.interpret --compare-layers`
+
+# ---------------------------------------------------------------------------
+# Sanity tests and heat maps (step 4). SmallCNN seed 42 on the test split.
+# ---------------------------------------------------------------------------
+SANITY_MODEL = "small_cnn"
+SANITY_STEP = 3.0                             # yd: shooter closer/farther, goalkeeper sideways/forward
+SANITY_DEF_NEAR = 1.5                         # yd in front of the shooter (test 2a)
+SANITY_ASIDE = 6.0                            # yd beside the shot line for the control defender (2c)
+SANITY_UNCHANGED = 1e-3                       # |delta p| below this counts as "no change"
+DISTANCE_BANDS = (0, 8, 12, 18, 25, 200)      # yd, for the per-band breakdown
+SANITY_EXAMPLE_SEED = 7                       # rule-based choice of the example shots
+HEATMAP_X = (78.0, 119.0)                     # shooter grid (inclusive), 1 yd steps; x <= 119 keeps 1 yd off the goal line
+HEATMAP_Y = (10.0, 70.0)
+HEATMAP_STEP = 1.0
