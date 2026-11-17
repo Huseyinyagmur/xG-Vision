@@ -35,9 +35,9 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
 1. ✅ **Veri:** StatsBomb şutları + freeze frame → temizlik → çok kanallı tensör → görselleştirme.
 2. ✅ **Model:** sıfırdan küçük bir CNN ile ön eğitimli bir modeli (ör. ResNet18, ilk conv 6 kanala
    uyarlanmış) karşılaştır. Eğitim döngüsü, early stopping, en iyi modeli kaydetme.
-3. ⏭️ **Değerlendirme:** maç bazında test, log loss, Brier, ROC-AUC, kalibrasyon grafiği; StatsBomb xG
+3. ✅ **Değerlendirme:** maç bazında test, log loss, Brier, ROC-AUC, kalibrasyon grafiği; StatsBomb xG
    ve baseline (sadece mesafe + açı ile lojistik regresyon) ile karşılaştırma; ilginç test pozisyonları; Grad-CAM.
-4. **Mantık testleri:** şutçuyu yaklaştır/uzaklaştır, araya savunmacı koy, kaleciyi çıkar → xG beklenen
+4. ⏭️ **Mantık testleri:** şutçuyu yaklaştır/uzaklaştır, araya savunmacı koy, kaleciyi çıkar → xG beklenen
    yönde değişiyor mu? Şutçuyu ceza sahasının her noktasına koyup xG ısı haritası.
 5. **İnteraktif taktik tahtası:** Streamlit veya Gradio, oyuncuları sürükle-bırak → anlık xG.
 6. (İsteğe bağlı) Yayın karesi → YOLO ile oyuncu tespiti → saha anahtar noktaları + homografi → kuşbakışı → xG.
@@ -48,10 +48,10 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
   sonradan kalibre et ya da düz BCE tercih et.
 - Bölme **maç bazında** yapılır, aynı maçın şutları farklı bölümlerde olamaz (`split` sütunu sabit, değiştirme).
 
-## Mevcut durum (2. adım tamamlandı)
+## Mevcut durum (3. adım tamamlandı, push kullanıcı onayını bekliyor)
 
 1. adım `0eff913` ile push edildi. 2. adım commit'leri: `06d6435` (CLAUDE.md), `9484875` (render
-hızlandırma), `3439ffc` (modeller + eğitim döngüsü) ve 2. adımın README/CLAUDE.md commit'i.
+hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım tek commit'te (değerlendirme + README/CLAUDE.md), push kullanıcı onayını bekliyor.
 README İngilizce ve portföy odaklı; her adım bitince README'nin yol haritası ve sonuçlar bölümü güncellenmeli.
 
 ### Dosyalar
@@ -63,12 +63,17 @@ src/dataset.py        # load_shots(split), ShotDataset -> (image, extra, y, idx)
 src/features.py       # extra_features(df): vücut bölgesi one-hot [head, foot, other]
 src/models.py         # SmallCNN, ResNet18xG, XGHead, build_model(name), load_checkpoint(path)
 src/train.py          # eğitim döngüsü, precise BN, early stopping, checkpoint, log, eğri grafiği
-src/evaluate.py       # compute_metrics, metrics_by_group (cinsiyet), reference_predictions; `python -m src.evaluate`
+src/baselines.py      # lojistik regresyon: mesafe + açı (+ vücut bölgesi); `python -m src.baselines`
+src/evaluate.py       # metrikler, maç bazlı bootstrap, kalibrasyon kutuları, rapor; `python -m src.evaluate --split val|test`
+src/gradcam.py        # GradCAM (hook'larla), smallcnn_layer(model, blok)
+src/interpret.py      # --compare-layers (val), --split test: CNN ile StatsBomb'un en çok ayrıştığı şutlar + Grad-CAM
 src/utils.py          # seed_everything, get_device, tee_output (log dosyası)
 src/visualize.py      # saha çizimleri, kanal grafikleri, veri özeti; `python -m src.visualize`
-tests/                # render = eski referans, mirror_y = satır çevirme, modeller, sampler (11 test)
-results/plots/        # veri grafikleri + training_curves_small_cnn.png, training_curves_resnet18.png
+tests/                # render, aynalama, modeller, sampler, ağırlıklı AUC / bootstrap / kalibrasyon, Grad-CAM
+results/              # metrics_{val,test}.md|csv, interesting_test.md
+results/plots/        # veri, eğitim eğrileri, calibration_*, gradcam_layers_val, interesting_cnn_*_test
 models/<run>/         # best.pt, last.pt, history.csv, config.json, train.log, val_predictions.csv (git'te yok)
+models/predictions_{val,test}.csv  # tüm modellerin + TTA + baseline'ların şut bazlı tahminleri (git'te yok)
 ```
 
 ### Çalıştırma
@@ -170,8 +175,37 @@ freeze_frame (np.ndarray N×4: [x, y, teammate, is_gk]), n_players, has_gk, is_g
    README'de 6 adımlık yol haritası, float16 aktarım, tek iş parçacıklı BLAS, num_workers = 6,
    SmallCNN 16-32-64-128-256, precise BN, ResNet18 önce maxpool'lu.
 
-### 3. adım için notlar
-- Test metrikleri `src/evaluate.py` içindeki `compute_metrics` / `metrics_by_group` ile hesaplanmalı (CNN'ler,
-  StatsBomb xG, sabit tahmin ve henüz yazılmamış mesafe + açı lojistik regresyonu aynı fonksiyonla).
-- Checkpoint'ler precise-BN istatistiklerini içerir; `load_checkpoint` ile yüklenip doğrudan `eval()`'de kullanılabilir.
-- Test tahmininde aynalama TTA (orijinal + aynalanmış ortalaması) denenebilir; eklemeden önce kullanıcıya sor.
+### 3. adım: değerlendirme (17 Kasım 2026)
+- Ek eğitimler (gece kuyruğu, ~71 dk): small_cnn seed 43/44, small_cnn_nodist (mesafe kanalı yok,
+  `channels=(0..4)`) seed 42/43/44, resnet18_scratch (ImageNet'siz) seed 42. Seed ≠ 42 → `models/<model>_s<seed>/`.
+- Seçimler val'de sabitlendi: `EVAL_MODELS` (4 CNN), `GRADCAM_LAYER = 2` (20×15). Test **bir kez** çalıştırıldı.
+  Testi yeniden çalıştırıp ona göre seçim yapma.
+- Bootstrap: maç bazında, B = 2000, seed 2026. Eşleştirilmiş farklar seed-42 modelleriyle; çok seed'li
+  modellerde ayrı ortalama ± std tablosu. TTA (aynalama) yalnızca ek satır.
+
+**Test (14.166 şut, 597 maç, gol oranı 0,1105), log loss / Brier / AUC:**
+
+| Model | Log loss | Brier | AUC |
+|---|---|---|---|
+| StatsBomb xG | **0,2778** | **0,0799** | **0,8065** |
+| SmallCNN (seed 42) | 0,2826 | 0,0813 | 0,7966 |
+| SmallCNN 3 seed | 0,2824 ± 0,0006 | 0,0813 | 0,7983 ± 0,0015 |
+| SmallCNN mesafesiz (seed 42) | 0,2830 | 0,0818 | 0,7974 |
+| ResNet18 ön eğitimsiz | 0,2832 | 0,0814 | 0,7966 |
+| ResNet18 ImageNet | 0,2872 | 0,0826 | 0,7962 |
+| LogReg mesafe + açı + vücut | 0,3044 | 0,0879 | 0,7533 |
+| LogReg mesafe + açı | 0,3131 | 0,0903 | 0,7281 |
+| Sabit | 0,3478 | 0,0983 | 0,5000 |
+
+- SmallCNN − StatsBomb: log loss +0,0047 [+0,0023, +0,0071], AUC −0,0099 → **StatsBomb anlamlı biçimde daha iyi**
+  (erkek ve kadında ayrı ayrı da). SmallCNN − LogReg(b): −0,0218 log loss, +0,043 AUC.
+- ImageNet − ön eğitimsiz ResNet18: +0,0039 [+0,0013, +0,0066] (ön eğitimli daha kötü; fark 0,003'ün üstünde
+  ama tek seed ve farklı LR). README'de "ön eğitim fayda sağlamadı" diye yazıldı, üstünlük iddiası yok.
+- Mesafe kanalı ablasyonu: −0,0005 [−0,0023, +0,0015] → anlamlı fark yok.
+- ECE (test): SmallCNN 0,009, ResNet18 0,011, StatsBomb 0,012, LogReg 0,015. TTA: SmallCNN 0,2826 → 0,2822.
+- CNN'in StatsBomb'dan çok yüksek dediği şutlarda vole/yarım vole/aşırtma oranı yüksek (CNN teknik bilgisini görmüyor).
+- Grad-CAM sınırlı açıklayıcı: GAP yüzünden boş alanları da vurguluyor, yalnızca pozitif kanıt. README'de not edildi.
+
+### 4. adım için notlar
+- Mantık testleri `load_checkpoint` + `src.pitch_tensor.render_shot` ile freeze frame'i değiştirerek yapılabilir.
+- Ek skalerler (technique, first_time...) StatsBomb ile farkın olası kaynağı; eklemeden önce kullanıcıya sor.

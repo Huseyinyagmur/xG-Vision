@@ -90,8 +90,57 @@ HEAD_HIDDEN = 64
 HEAD_DROPOUT = 0.3
 
 MODEL_CONFIGS = {
-    # lr: head / new layers; backbone_lr: pretrained layers (None -> same as lr)
-    "small_cnn": {"lr": 1e-3, "backbone_lr": None},
-    "resnet18": {"lr": 1e-3, "backbone_lr": 1e-4, "maxpool": True},
-    "resnet18_nomaxpool": {"lr": 1e-3, "backbone_lr": 1e-4, "maxpool": False},
+    # arch: network; lr: head / new layers; backbone_lr: pretrained layers (None -> same as lr);
+    # channels: input channels the model sees (None -> all, see CHANNELS); pretrained: ImageNet weights
+    "small_cnn": {"arch": "small_cnn", "lr": 1e-3, "backbone_lr": None},
+    "small_cnn_nodist": {"arch": "small_cnn", "lr": 1e-3, "backbone_lr": None,
+                         "channels": (0, 1, 2, 3, 4)},                 # ablation: no goal-distance map
+    "resnet18": {"arch": "resnet18", "lr": 1e-3, "backbone_lr": 1e-4, "maxpool": True, "pretrained": True},
+    "resnet18_scratch": {"arch": "resnet18", "lr": 1e-3, "backbone_lr": None, "maxpool": True,
+                         "pretrained": False},                        # same net, random init
+    "resnet18_nomaxpool": {"arch": "resnet18", "lr": 1e-3, "backbone_lr": 1e-4, "maxpool": False,
+                           "pretrained": True},
 }
+
+# ---------------------------------------------------------------------------
+# Evaluation (step 3). Fixed on the validation split BEFORE the test split is used.
+# Prediction columns are named by run directory (models/<run>/best.pt) or baseline key.
+# ---------------------------------------------------------------------------
+RESULTS_DIR = PROJECT_ROOT / "results"
+
+EVAL_MODELS = (                               # trained CNN runs in the main tables (seed 42)
+    "small_cnn", "resnet18", "resnet18_scratch", "small_cnn_nodist",
+)
+SEED_GROUPS = {                               # extra seeds -> mean +- std columns
+    "small_cnn": ("small_cnn", "small_cnn_s43", "small_cnn_s44"),
+    "small_cnn_nodist": ("small_cnn_nodist", "small_cnn_nodist_s43", "small_cnn_nodist_s44"),
+}
+TTA_MODELS = ("small_cnn", "resnet18")        # extra rows: mean of original + mirrored prediction
+BASELINES = ("statsbomb_xg", "constant", "logreg_dist_angle", "logreg_dist_angle_body")
+
+DISPLAY_NAMES = {
+    "small_cnn": "SmallCNN",
+    "resnet18": "ResNet18 (ImageNet)",
+    "resnet18_scratch": "ResNet18 (random init)",
+    "small_cnn_nodist": "SmallCNN, no distance map",
+    "statsbomb_xg": "StatsBomb xG",
+    "constant": "Constant (train goal rate)",
+    "logreg_dist_angle": "LogReg: distance + angle",
+    "logreg_dist_angle_body": "LogReg: distance + angle + body part",
+}
+
+BOOTSTRAP_B = 2000                            # match-level bootstrap resamples
+BOOTSTRAP_SEED = 2026
+BOOTSTRAP_PAIRS = (                           # paired differences (a - b), seed-42 models
+    ("small_cnn", "statsbomb_xg"),
+    ("small_cnn", "resnet18"),
+    ("small_cnn", "logreg_dist_angle_body"),
+    ("resnet18", "resnet18_scratch"),
+    ("small_cnn", "small_cnn_nodist"),
+)
+CALIBRATION_MODELS = ("small_cnn", "resnet18", "statsbomb_xg", "logreg_dist_angle_body")
+CALIBRATION_BINS = 15                         # equal-count bins
+
+INTERESTING_MODEL = "small_cnn"               # compared with StatsBomb xG for the example shots
+INTERESTING_PER_GROUP = 3                     # per direction: 3 goals + 3 non-goals
+GRADCAM_LAYER = 2      # SmallCNN block (20x15 map), chosen on val with `python -m src.interpret --compare-layers`

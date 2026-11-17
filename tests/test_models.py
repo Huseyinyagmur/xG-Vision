@@ -52,3 +52,19 @@ def test_body_part_onehot():
     np.testing.assert_array_equal(body_part_onehot(s), [[1, 0, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1]])
     with pytest.raises(ValueError):
         body_part_onehot(pd.Series(["Knee"]))
+
+
+def test_channel_ablation_ignores_dropped_channel():
+    model = SmallCNN(prior=0.1, channels=(0, 1, 2, 3, 4)).eval()
+    assert model.features[0][0].in_channels == 5
+    img, extra = _batch()
+    changed = img.clone()
+    changed[:, 5] = torch.rand_like(changed[:, 5])            # only the dropped channel differs
+    torch.testing.assert_close(model(img, extra), model(changed, extra))
+    assert not torch.allclose(model(img, extra), model(img * 0.5, extra))
+
+
+def test_state_dict_has_no_channel_index():
+    # the channel index is a non-persistent buffer, so checkpoints from before the
+    # ablation option (step 2) still load into the current models
+    assert not any("select" in k for k in SmallCNN(prior=0.1).state_dict())

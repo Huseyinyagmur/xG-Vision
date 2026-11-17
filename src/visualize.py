@@ -93,6 +93,59 @@ def plot_data_overview(df, save_path=None):
     return fig
 
 
+MODEL_COLORS = {"small_cnn": "tab:blue", "resnet18": "tab:orange", "statsbomb_xg": "black",
+                "logreg_dist_angle_body": "tab:green"}
+
+
+def _reliability_panel(ax, bins: dict, title: str):
+    """Reliability diagram on log-log axes (most xG values are small)."""
+    from src.evaluate import expected_calibration_error, name
+
+    lim = (0.005, 1.0)
+    ax.plot(lim, lim, color="#999", lw=1, ls="--", zorder=0)
+    for k, (c, b) in enumerate(bins.items()):
+        col = MODEL_COLORS.get(c, f"C{k}")
+        err = np.vstack([b["goal_rate"] - b["ci_low"], b["ci_high"] - b["goal_rate"]]).clip(min=0)
+        ax.errorbar(b["mean_pred"], b["goal_rate"].clip(lower=lim[0]), yerr=err, fmt="o-", ms=3.5, lw=1.2,
+                    capsize=2, color=col, label=f"{name(c)} (ECE {expected_calibration_error(b):.4f})")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlim(*lim); ax.set_ylim(*lim)
+    ax.set_xlabel("predicted xG (bin mean)"); ax.set_ylabel("observed goal rate")
+    ax.set_title(title, fontsize=10)
+    ax.grid(alpha=0.3, which="both")
+    ax.legend(fontsize=7.5, loc="upper left")
+
+
+def plot_reliability(bins: dict, pred: pd.DataFrame, save_path, by_group: bool = False, title: str = ""):
+    """
+    by_group=False: bins = {model: bins_df}; reliability diagram + histogram of the predictions.
+    by_group=True : bins = {group: {model: bins_df}}; one reliability panel per group.
+    Error bars: 95% match-bootstrap interval of the observed goal rate in each bin.
+    """
+    if by_group:
+        fig, axes = plt.subplots(1, len(bins), figsize=(6.2 * len(bins), 5.6))
+        for ax, (g, b) in zip(np.atleast_1d(axes), bins.items()):
+            n = int((pred["gender"] == g).sum())
+            _reliability_panel(ax, b, f"{g} ({n:,} shots)")
+    else:
+        fig, (ax, ax_h) = plt.subplots(2, 1, figsize=(6.6, 8.4), gridspec_kw={"height_ratios": [3, 1.3]},
+                                       sharex=True)
+        _reliability_panel(ax, bins, "Reliability diagram (equal-count bins)")
+        ax.set_xlabel("")
+        edges = np.logspace(np.log10(0.005), 0, 40)
+        for k, c in enumerate(bins):
+            ax_h.hist(pred[c].clip(0.005, 1), bins=edges, histtype="step", lw=1.3,
+                      color=MODEL_COLORS.get(c, f"C{k}"))
+        ax_h.set_xscale("log"); ax_h.set_xlabel("predicted xG"); ax_h.set_ylabel("shots")
+        ax_h.set_title("Distribution of the predictions", fontsize=10)
+        ax_h.grid(alpha=0.3)
+    if title:
+        fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     # python -m src.visualize  -> writes the step-1 plots to results/plots/
     import matplotlib

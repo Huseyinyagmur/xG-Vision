@@ -47,12 +47,34 @@ def _conv_block(c_in: int, c_out: int) -> nn.Sequential:
     )
 
 
+class ChannelSelect(nn.Module):
+    """
+    Keeps only some input channels (for ablations). Models always receive the full
+    N_CHANNELS tensor, so data, evaluation and Grad-CAM code stay the same for every model.
+    The index is a non-persistent buffer: checkpoints without it still load.
+    """
+
+    def __init__(self, channels=None):
+        super().__init__()
+        self.channels = None if channels is None else tuple(int(c) for c in channels)
+        idx = torch.arange(C.N_CHANNELS) if channels is None else torch.tensor(self.channels)
+        self.register_buffer("idx", idx, persistent=False)
+
+    @property
+    def n_out(self) -> int:
+        return len(self.idx)
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        return image if self.channels is None else image.index_select(1, self.idx)
+
+
 class SmallCNN(nn.Module):
     """5 x [conv-bn-relu x2 + maxpool]: 160x120 -> 5x3, receptive field ~ 130 px (65 yd)."""
 
-    def __init__(self, widths=(16, 32, 64, 128, 256), prior: float = 0.1):
+    def __init__(self, widths=(16, 32, 64, 128, 256), prior: float = 0.1, channels=None):
         super().__init__()
-        layers, c = [], C.N_CHANNELS
+        self.select = ChannelSelect(channels)
+        layers, c = [], self.select.n_out
         for w in widths:
             layers.append(_conv_block(c, w))
             c = w
@@ -64,7 +86,7 @@ class SmallCNN(nn.Module):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
 
     def forward(self, image: torch.Tensor, extra: torch.Tensor) -> torch.Tensor:
-        return self.head(self.pool(self.features(image)).flatten(1), extra)
+        return self.head(self.pool(self.features(self.select(image))).flatten(1), extra)
 
     def param_groups(self, lr: float, backbone_lr: float | None = None):
         return [{"params": self.parameters(), "lr": lr}]
@@ -95,13 +117,14 @@ class ResNet18xG(nn.Module):
     resolution (160x120 -> 10x8 instead of 5x4) at ~4x the compute.
     """
 
-    def __init__(self, pretrained: bool = True, maxpool: bool = True, prior: float = 0.1):
+    def __init__(self, pretrained: bool = True, maxpool: bool = True, prior: float = 0.1, channels=None):
         super().__init__()
+        self.select = ChannelSelect(channels)
         # imported here: DataLoader workers re-import the training script and do not need torchvision
         from torchvision.models import ResNet18_Weights, resnet18
 
         net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
-        net.conv1 = adapt_first_conv(net.conv1, C.N_CHANNELS)
+        net.conv1 = adapt_first_conv(net.conv1, self.select.n_out)
         if not maxpool:
             net.maxpool = nn.Identity()
         self.stem = nn.Sequential(net.conv1, net.bn1, net.relu, net.maxpool)
@@ -110,7 +133,7 @@ class ResNet18xG(nn.Module):
         self.head = XGHead(net.fc.in_features, prior=prior)
 
     def forward(self, image: torch.Tensor, extra: torch.Tensor) -> torch.Tensor:
-        return self.head(self.pool(self.body(self.stem(image))).flatten(1), extra)
+        return self.head(self.pool(self.body(self.stem(self.select(image)))).flatten(1), extra)
 
     def param_groups(self, lr: float, backbone_lr: float | None = None):
         """New layers (6-ch conv1, head) use `lr`; pretrained layers use `backbone_lr`."""
@@ -122,13 +145,20 @@ class ResNet18xG(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-def build_model(name: str, prior: float = 0.1, pretrained: bool = True) -> nn.Module:
-    if name == "small_cnn":
-        return SmallCNN(prior=prior)
-    if name.startswith("resnet18"):
-        maxpool = C.MODEL_CONFIGS[name].get("maxpool", True)
-        return ResNet18xG(pretrained=pretrained, maxpool=maxpool, prior=prior)
-    raise ValueError(f"unknown model: {name}")
+def build_model(name: str, prior: float = 0.1, pretrained: bool | None = None) -> nn.Module:
+    """
+    Model from its MODEL_CONFIGS entry. `pretrained=None` uses the config value;
+    load_checkpoint passes False because the weights come from the checkpoint anyway.
+    """
+    cfg = C.MODEL_CONFIGS[name]
+    channels = cfg.get("channels")
+    if cfg["arch"] == "small_cnn":
+        return SmallCNN(prior=prior, channels=channels)
+    if cfg["arch"] == "resnet18":
+        pretrained = cfg.get("pretrained", True) if pretrained is None else pretrained
+        return ResNet18xG(pretrained=pretrained, maxpool=cfg.get("maxpool", True), prior=prior,
+                          channels=channels)
+    raise ValueError(f"unknown architecture: {cfg['arch']}")
 
 
 def load_checkpoint(path: str | Path, device: str | torch.device = "cpu") -> tuple[nn.Module, dict]:

@@ -193,12 +193,12 @@ def plot_history(hist: pd.DataFrame, run_name: str, sb_val: dict, save_path) -> 
 
 # ---------------------------------------------------------------------------
 def train(args) -> None:
-    seed_everything(C.SEED)
+    seed_everything(args.seed)
     device = get_device()
     torch.backends.cudnn.benchmark = True
     amp_dtype = AMP_DTYPES[args.amp]
     mcfg = C.MODEL_CONFIGS[args.model]
-    run_name = args.run_name or args.model
+    run_name = run_name_of(args)
     run_dir = C.MODELS_DIR / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -207,7 +207,8 @@ def train(args) -> None:
         train_df = train_df.sample(min(args.subset, len(train_df)), random_state=C.SEED).reset_index(drop=True)
         val_df = val_df.sample(min(args.subset, len(val_df)), random_state=C.SEED).reset_index(drop=True)
     prior = float(train_df["is_goal"].mean())
-    loaders = ShotLoader(train_df, val_df, args.batch_size, args.num_workers, args.max_batches)
+    loaders = ShotLoader(train_df, val_df, args.batch_size, args.num_workers, args.max_batches,
+                         seed=args.seed)
     n_tr, n_va = len(train_df), len(val_df)
 
     model = build_model(args.model, prior=prior).to(device).to(memory_format=torch.channels_last)
@@ -221,7 +222,7 @@ def train(args) -> None:
     sb_val = compute_metrics(val_df["is_goal"], val_df["statsbomb_xg"])
     run_cfg = {"model": args.model, **mcfg, "batch_size": args.batch_size, "amp": args.amp,
                "max_epochs": args.epochs, "patience": args.patience, "weight_decay": C.WEIGHT_DECAY,
-               "bn_recal_batches": C.BN_RECAL_BATCHES, "subset": args.subset, "seed": C.SEED,
+               "bn_recal_batches": C.BN_RECAL_BATCHES, "subset": args.subset, "seed": args.seed,
                "n_train": len(train_df), "n_val": len(val_df), "prior": prior, "n_params": count_parameters(model)}
     (run_dir / "config.json").write_text(json.dumps(run_cfg, indent=2))
     print(f"{run_name}: {run_cfg['n_params'] / 1e6:.2f} M params | train {len(train_df)} | val {len(val_df)} "
@@ -284,10 +285,18 @@ def train(args) -> None:
           .astype(float).round(4).to_string())
 
 
+def run_name_of(args) -> str:
+    """Default run name: the model name, plus _s<seed> for seeds other than the default."""
+    if args.run_name:
+        return args.run_name
+    return args.model if args.seed == C.SEED else f"{args.model}_s{args.seed}"
+
+
 def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="small_cnn", choices=list(C.MODEL_CONFIGS))
     ap.add_argument("--run-name", default=None, help="defaults to the model name")
+    ap.add_argument("--seed", type=int, default=C.SEED, help="init, shuffling and augmentation seed")
     ap.add_argument("--epochs", type=int, default=C.MAX_EPOCHS)
     ap.add_argument("--patience", type=int, default=C.EARLY_STOP_PATIENCE)
     ap.add_argument("--batch-size", type=int, default=C.BATCH_SIZE)
@@ -308,5 +317,5 @@ if __name__ == "__main__":
         benchmark_loader(load_shots("train"), args.batch_size, args.bench_workers)
     else:
         # everything printed (and any traceback) also goes to models/<run>/train.log
-        with tee_output(C.MODELS_DIR / (args.run_name or args.model) / "train.log"):
+        with tee_output(C.MODELS_DIR / run_name_of(args) / "train.log"):
             train(args)
