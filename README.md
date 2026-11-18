@@ -20,7 +20,7 @@ the player positions StatsBomb records at the moment of the shot (*freeze frames
 | 2 | Models: small CNN from scratch vs. ImageNet ResNet18 (6-channel first conv), body part as an extra input, training loop with early stopping | ✅ done |
 | 3 | Evaluation on the test split: log loss / Brier / ROC-AUC, calibration, comparison with StatsBomb xG and a distance + angle logistic regression, interesting shots, Grad-CAM | ✅ done |
 | 4 | Sanity tests: move the shooter, add a defender in the shooting lane, remove the goalkeeper; xG heat map over the box | ✅ done |
-| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | ⏳ next |
+| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | 🚧 MVP runs locally; heat-map layer and online demo next |
 | 6 | (optional) Broadcast frame → player detection + pitch homography → bird's-eye view → xG | ⏳ planned |
 
 ## Data
@@ -274,6 +274,28 @@ to the shot line also pushes the keeper towards the goal line; moves that would 
 skipped (3,303 shots), and the largest wrong-direction 3b cases are of this kind
 ([`sanity_failures_test.png`](results/plots/sanity_failures_test.png)).
 
+## Tactics board (step 5, MVP)
+
+A Streamlit app where players can be dragged on a bird's-eye view of the attacking half; the
+CNN's xG updates after every move. xG is always mirror-averaged (the situation and its mirror
+image), the LogReg baseline is shown next to it, and the panel shows the change caused by the
+last move. Five real test-set situations (chosen by rule) and an empty pitch are built in.
+Warnings appear where step 4 found the model unreliable: the goal-line edge outside the posts,
+no goalkeeper, a goalkeeper alone, headers from 25+ yd.
+
+```bash
+pip install -r requirements-app.txt
+python -m src.export_assets            # once: scenarios + LogReg coefficients -> app/assets/ (already in the repo)
+streamlit run app/streamlit_app.py     # needs models/small_cnn/best.pt
+python scripts/ui_smoke.py             # optional browser test (pip install playwright; uses Edge/Chrome)
+```
+
+The drag-and-drop board is a small custom Streamlit component (`app/board.js`, components v2,
+no build step): *Move* mode drags players, *Add* mode places a defender, teammate or goalkeeper
+with a click, and a double-click removes a player.
+
+![Tactics board](results/plots/board_mvp.png)
+
 ## Plots
 
 **Data sanity check.** The observed goal rate falls with distance and closely follows the mean
@@ -321,6 +343,7 @@ python -m src.evaluate --split test            # same report on the test split (
 python -m src.interpret --split test           # disagreement shots with Grad-CAM
 python -m src.sanity --split test              # step 4: sanity tests on every test shot (~2-3 min)
 python -m src.heatmap                          # step 4: xG heat maps (< 1 min)
+streamlit run app/streamlit_app.py             # step 5: tactics board
 
 python -m pytest tests -q                      # tests needing data/shots.pkl are skipped without it
 ```
@@ -362,6 +385,10 @@ src/
   perturb.py        # controlled edits of a shot (move shooter, add defender, move/remove keeper...)
   sanity.py         # sanity tests over all test shots, diagnostics, plots
   heatmap.py        # xG heat maps over a shooter grid, CNN vs. LogReg
+  board.py          # tactics board logic: pixel <-> yard mapping, TTA model, LogReg from JSON, warnings
+  export_assets.py  # scenarios + LogReg coefficients for the app
+app/                # Streamlit app + drag-and-drop component (board.js / board.css), assets/*.json
+scripts/ui_smoke.py # optional end-to-end browser test of the board
   utils.py          # seeding, device, log file
   visualize.py      # pitch plots, channel plots, data overview
 tests/              # renderer vs. reference, mirror = row flip, models, sampler, bootstrap/AUC, Grad-CAM, shot edits

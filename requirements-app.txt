@@ -1,0 +1,8 @@
+# Tactics board (step 5): `streamlit run app/streamlit_app.py`
+# On a CPU-only machine install the CPU build of PyTorch first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+numpy
+matplotlib
+mplsoccer>=1.2
+streamlit==1.67.0

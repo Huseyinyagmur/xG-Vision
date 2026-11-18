@@ -158,3 +158,14 @@ SANITY_EXAMPLE_SEED = 7                       # rule-based choice of the example
 HEATMAP_X = (78.0, 119.0)                     # shooter grid (inclusive), 1 yd steps; x <= 119 keeps 1 yd off the goal line
 HEATMAP_Y = (10.0, 70.0)
 HEATMAP_STEP = 1.0
+
+# ---------------------------------------------------------------------------
+# Interactive tactics board (step 5)
+# ---------------------------------------------------------------------------
+APP_DIR = PROJECT_ROOT / "app"
+APP_ASSETS = APP_DIR / "assets"
+BOARD_MODEL = "small_cnn"                     # seed 42; xG = mean of original and mirrored prediction
+BOARD_PX_PER_YD = 8
+BOARD_VIEW_X = (60.0, 122.0)                  # vertical view, goal at the top; 2 yd above the goal line
+BOARD_SCENARIO_SEED = 11                      # rule-based choice of the real test positions
+EDGE_WARN_X = 118.5                           # step 4: goal-line edge artefact outside the posts

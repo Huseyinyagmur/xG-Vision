@@ -48,10 +48,10 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
   sonradan kalibre et ya da düz BCE tercih et.
 - Bölme **maç bazında** yapılır, aynı maçın şutları farklı bölümlerde olamaz (`split` sütunu sabit, değiştirme).
 
-## Mevcut durum (4. adım tamamlandı, push kullanıcı onayını bekliyor)
+## Mevcut durum (5. adım: MVP hazır, kullanıcı geri bildirimi bekleniyor)
 
 1. adım `0eff913` ile push edildi. 2. adım commit'leri: `06d6435` (CLAUDE.md), `9484875` (render
-hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım: `6d72da3` (push edildi). 4. adım tek commit'te, push onay bekliyor.
+hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım: `6d72da3` (push edildi). 4. adım: `083d3e5` (push edildi).
 README İngilizce ve portföy odaklı; her adım bitince README'nin yol haritası ve sonuçlar bölümü güncellenmeli.
 
 ### Dosyalar
@@ -70,6 +70,10 @@ src/interpret.py      # --compare-layers (val), --split test: CNN ile StatsBomb'
 src/perturb.py        # Shot(x, y, ff, body) + saf düzenlemeler (şutçu taşı, savunmacı ekle, kaleci çıkar/kaydır...), OOD işaretleri
 src/sanity.py         # 4. adım mantık testleri (tüm test şutları), tanılama tabloları, grafikler; `--split test`
 src/heatmap.py        # şutçu ızgarası üzerinde xG ısı haritaları (kaleci tek / kalabalık / kontra), CNN vs LogReg
+src/board.py          # taktik tahtası mantığı (Streamlit'siz): px <-> yd, TTA'lı XGModel, LogRegJSON, uyarılar
+src/export_assets.py  # app/assets/scenarios.json (boş + 5 kural bazlı test pozisyonu), logreg.json
+app/                  # streamlit_app.py + kendi bileşenimiz board.js/board.css (components v2), assets/
+scripts/ui_smoke.py   # isteğe bağlı Playwright testi (sistem Edge'i), pytest dışında
 src/utils.py          # seed_everything, get_device, tee_output, free_memory_gb, pick_num_workers, is_memory_error
 src/visualize.py      # saha çizimleri, kanal grafikleri, veri özeti; `python -m src.visualize`
 tests/                # render, aynalama, modeller, sampler, ağırlıklı AUC / bootstrap / kalibrasyon, Grad-CAM
@@ -224,8 +228,22 @@ freeze_frame (np.ndarray N×4: [x, y, teammate, is_gk]), n_players, has_gk, is_g
   kenar artefaktı: x = 119'da 28 yd açıkta bile xG ~0,45 (eğitimde oradan 112 şut). (4) Sol/sağ asimetri.
 - Isı haritası: kalabalık pozisyonda ceza sahası noktalarının %96'sında xG düşüyor (ort. −0,13).
 
+### 5. adım: taktik tahtası (MVP, 18 Kasım 2026)
+- streamlit-drawable-canvas 0.13 denendi: sürükleme çalışıyor ama taşıma modu yalnızca tuvalin kendi ✎ düğmesiyle
+  açılıyor (Python'dan ayarlanamıyor). Kullanıcı kararı: **kendi bileşenimiz** (`st.components.v2`, derleme yok).
+- Dikey saha, kale üstte, y = 0 solda (VerticalPitch ile doğrulandı); 8 px/yd, görünüm x 60–122 → 640 × 496.
+  Tahta duyarlı: en fazla 640 px, oran sabit (dar sütunda kesilme hatası böyle çözüldü).
+- xG her zaman TTA; LogReg (b) yanında; "son hamlenin etkisi" Δ; uyarılar: kale çizgisi kenarı (x ≥ 118,5,
+  direk dışı), kalecisiz, sadece kaleci, 25+ yd kafa. Mod: Move / Add (+ tür seçimi); çift tık / sağ tık siler.
+- JS bileşeni oyuncuları kendi tutar, yalnızca `version` değişince (senaryo yükle / sıfırla) Python'dan alır.
+- Testler: yön testi (senaryo → tuval → geri → render_shot aynı), Playwright: sürükleme mesafesi, ekleme, silme,
+  kesilmeme (1500 ve 1100 px). Görsel kontrol: plot_freeze_frame ile aynı diziliş (90° sola döndürülmüş).
+- Sırada (kullanıcı geri bildiriminden sonra): ısı haritası katmanı (2 yd, isteğe bağlı 1 yd), HF Spaces + HF Hub model deposu.
+
 ### 5. adım için notlar
 - Taktik tahtası `perturb.Shot` + `render_shot` + `load_checkpoint` ile kurulabilir; kenar artefaktı nedeniyle
   x ≥ 118,5 ve direk dışı konumlar için arayüzde uyarı göstermeyi kullanıcıya öner.
 - **Olası v2 (ertelendi, kullanıcı kararı):** technique + first_time skaler girdi. StatsBomb ile farkın olası kaynağı.
   Testten sonra eklendiği için sonuçları **post-hoc** olarak raporlanacak (ana test sonuçlarının yerine geçmez).
+- **Olası v2:** tensör tuvalini kale çizgisinin arkasına uzatmak (ör. x ≤ 124), kale çizgisi kenar artefaktını kökten
+  çözmek için. Yeniden eğitim gerekir; sonuçları post-hoc raporlanır.
