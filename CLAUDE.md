@@ -48,7 +48,7 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
   sonradan kalibre et ya da düz BCE tercih et.
 - Bölme **maç bazında** yapılır, aynı maçın şutları farklı bölümlerde olamaz (`split` sütunu sabit, değiştirme).
 
-## Mevcut durum (5. adım tamamlandı; HF Hub yüklemesi + push kullanıcı onayını bekliyor)
+## Mevcut durum (5. adım tamamlandı ve push edildi; sırada isteğe bağlı 6. adım)
 
 1. adım `0eff913` ile push edildi. 2. adım commit'leri: `06d6435` (CLAUDE.md), `9484875` (render
 hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım: `6d72da3` (push edildi). 4. adım: `083d3e5` (push edildi).
@@ -263,7 +263,14 @@ freeze_frame (np.ndarray N×4: [x, y, teammate, is_gk]), n_players, has_gk, is_g
   1.4 yayınlarda StatsBomb logosu: `assets/statsbomb_logo.png` (open-data reposundaki resmi PNG, 600 px).
 - Kod MIT (`LICENSE`); ağırlıklar "other" lisans, StatsBomb sözleşmesine bağlı, ticari olmayan kullanım.
 - CPU ölçümü (2 thread): tek xG ~10 ms, harita 2 yd ~27 sn, 1 yd ~87 sn → CPU'da seçenekler 3 yd (varsayılan) /
-  2 yd; GPU'da 2 yd / 1 yd. `XG_DEVICE=cpu` ile CPU zorlanabilir. Ağırlık yerelde yoksa HF Hub'dan iner.
+  2 yd; GPU'da 2 yd / 1 yd. `XG_DEVICE=cpu` ile CPU zorlanabilir. Ağırlık yerelde yoksa HF Hub'dan iner;
+  `XG_WEIGHTS=hub` yerel dosyayı yok sayar (yayınlanan ağırlığın testi için).
+- **HF Hub yüklendi** (kullanıcı onayıyla): https://huggingface.co/huseyinyagmur/xg-vision-smallcnn, commit `816fef1`;
+  4 dosyanın sha256'sı yerelle aynı; Playwright testi HF'den indirilen ağırlıkla 6/6 geçti.
+- README görsel ağırlıklı yeniden yazıldı (kullanıcının sırası: GIF → özet + CI tablosu → yöntem → sonuçlar →
+  model ne öğrendi → Grad-CAM → sınırlar → kurulum). GIF: `scripts/record_demo.py` (Playwright, adım adım
+  ekran görüntüsü + çizilmiş imleç; imleç pointer olaylarıyla, çünkü tahta pointerdown'da preventDefault yapıyor;
+  ortak palet 12 kareden) → `results/plots/board_demo.gif` (~15 sn, ~0,2 MB).
 
 ### 5. adım için notlar
 - Taktik tahtası `perturb.Shot` + `render_shot` + `load_checkpoint` ile kurulabilir; kenar artefaktı nedeniyle

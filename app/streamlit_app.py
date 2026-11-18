@@ -37,10 +37,12 @@ def get_model() -> B.XGModel:
     import torch
     device = torch.device(os.environ["XG_DEVICE"]) if os.environ.get("XG_DEVICE") else None   # e.g. XG_DEVICE=cpu
     local = C.MODELS_DIR / C.BOARD_MODEL / "best.pt"
-    if local.exists():
+    if local.exists() and os.environ.get("XG_WEIGHTS") != "hub":   # XG_WEIGHTS=hub: always use the published file
         return B.XGModel(local, device)
     from huggingface_hub import hf_hub_download
-    return B.XGModel(hf_hub_download(C.HF_MODEL_REPO, C.HF_MODEL_FILE), device)
+    path = hf_hub_download(C.HF_MODEL_REPO, C.HF_MODEL_FILE)
+    print(f"weights: {C.HF_MODEL_REPO}/{C.HF_MODEL_FILE}")
+    return B.XGModel(path, device)
 
 
 def heat_steps() -> dict[str, float]:
