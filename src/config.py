@@ -169,3 +169,6 @@ BOARD_PX_PER_YD = 8
 BOARD_VIEW_X = (60.0, 122.0)                  # vertical view, goal at the top; 2 yd above the goal line
 BOARD_SCENARIO_SEED = 11                      # rule-based choice of the real test positions
 EDGE_WARN_X = 118.5                           # step 4: goal-line edge artefact outside the posts
+HF_MODEL_REPO = "huseyinyagmur/xg-vision-smallcnn"   # weights + model card on the Hugging Face Hub
+HF_MODEL_FILE = "small_cnn.pt"                        # used when models/<BOARD_MODEL>/best.pt is missing
+LOGO_PATH = PROJECT_ROOT / "assets" / "statsbomb_logo.png"   # StatsBomb Public Data User Agreement 1.4

@@ -2,7 +2,8 @@
 
     python -m src.export_assets
 
-app/assets/scenarios.json : empty pitch + 5 real test positions, chosen by rule (fixed seed)
+app/assets/scenarios.json : empty pitch + 5 real test positions, chosen by rule (fixed seed);
+                            real ones as (match_id, shot_id) only, fetched from StatsBomb at run time
 app/assets/logreg.json    : LogReg (distance + angle + body part) scaler and coefficients
 Model weights are not written here (models/small_cnn/best.pt locally; HF Hub later).
 """
@@ -53,13 +54,10 @@ def pick_scenarios(test: pd.DataFrame) -> list[tuple[str, str, pd.Series]]:
 
 
 def scenario_record(name: str, label: str, shot_id: str, row: pd.Series) -> dict:
-    return {"name": name, "label": label, "x": float(row.x), "y": float(row.y),
-            "body": C.BODY_PART_MAP[row.body_part],
-            "freeze_frame": np.asarray(row.freeze_frame, float).round(3).tolist(),
-            "meta": {"shot_id": shot_id, "competition": row.competition, "season": row.season,
-                     "gender": row.gender, "outcome": row.outcome, "is_goal": int(row.is_goal),
-                     "statsbomb_xg": round(float(row.statsbomb_xg), 4), "body_part": row.body_part,
-                     "technique": row.technique}}
+    """Only identifiers: the positions are fetched from StatsBomb at run time (src.board),
+    because the StatsBomb Public Data User Agreement (1.2.1) forbids redistributing the data."""
+    return {"name": name, "label": label, "match_id": int(row.match_id), "shot_id": shot_id,
+            "competition": row.competition, "season": row.season}
 
 
 def logreg_record(train: pd.DataFrame) -> dict:
@@ -79,9 +77,7 @@ def main():
     (C.APP_ASSETS / "logreg.json").write_text(json.dumps(logreg_record(load_shots("train")), indent=1),
                                               encoding="utf-8")
     for s in scen:
-        m = s["meta"]
-        print(f"{s['name']:12s} {s['label']:48s} players={len(s['freeze_frame'])} "
-              f"{m.get('outcome', ''):10s} SB xG {m.get('statsbomb_xg', '')}")
+        print(f"{s['name']:12s} {s['label']:48s} {s.get('competition', '')} {s.get('season', '')}")
     print(f"-> {C.APP_ASSETS}")
 
 

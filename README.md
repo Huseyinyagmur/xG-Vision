@@ -20,13 +20,17 @@ the player positions StatsBomb records at the moment of the shot (*freeze frames
 | 2 | Models: small CNN from scratch vs. ImageNet ResNet18 (6-channel first conv), body part as an extra input, training loop with early stopping | ✅ done |
 | 3 | Evaluation on the test split: log loss / Brier / ROC-AUC, calibration, comparison with StatsBomb xG and a distance + angle logistic regression, interesting shots, Grad-CAM | ✅ done |
 | 4 | Sanity tests: move the shooter, add a defender in the shooting lane, remove the goalkeeper; xG heat map over the box | ✅ done |
-| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | 🚧 runs locally (incl. xG map layer); online demo next |
+| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | ✅ done (runs locally; weights on the Hugging Face Hub) |
 | 6 | (optional) Broadcast frame → player detection + pitch homography → bird's-eye view → xG | ⏳ planned |
 
 ## Data
 
 [StatsBomb Open Data](https://github.com/statsbomb/open-data), all men's and women's
-competitions with event data (snapshot downloaded November 2026).
+competitions with event data (snapshot downloaded November 2026). **Data provided by StatsBomb**,
+used under the [StatsBomb Public Data User Agreement](https://github.com/statsbomb/open-data/blob/master/LICENSE.pdf)
+(non-commercial; the raw data is not redistributed in this repository).
+
+<img src="assets/statsbomb_logo.png" alt="StatsBomb" width="220">
 
 | | |
 |---|---|
@@ -302,11 +306,19 @@ It only depends on the non-shooters, so it is cached per defence and dragging th
 not recompute it (2 yd: ~1.5 s, 1 yd: ~5 s on an RTX 4050 Laptop GPU).
 
 ```bash
-pip install -r requirements-app.txt
-python -m src.export_assets            # once: scenarios + LogReg coefficients -> app/assets/ (already in the repo)
-streamlit run app/streamlit_app.py     # needs models/small_cnn/best.pt
+pip install -r requirements-app.txt    # CPU only: install torch from https://download.pytorch.org/whl/cpu first
+streamlit run app/streamlit_app.py
 python scripts/ui_smoke.py             # optional browser test (pip install playwright; uses Edge/Chrome)
 ```
+
+No training or data download is needed to run the board: without a local checkpoint the weights
+are downloaded from the Hugging Face Hub
+([huseyinyagmur/xg-vision-smallcnn](https://huggingface.co/huseyinyagmur/xg-vision-smallcnn),
+with a model card), and the five real positions are fetched from StatsBomb's own repository at
+start-up (the repository only stores their match and shot ids). On a CPU the map defaults to a
+3 yd grid (a 2 yd map takes about 30 s with 2 threads); `XG_DEVICE=cpu` forces the CPU.
+
+There is no hosted demo: Hugging Face now requires a paid plan for Docker and Gradio Spaces.
 
 The drag-and-drop board is a small custom Streamlit component (`app/board.js`, components v2,
 no build step): *Move* mode drags players, *Add* mode places a defender, teammate or goalkeeper
@@ -362,6 +374,8 @@ python -m src.interpret --split test           # disagreement shots with Grad-CA
 python -m src.sanity --split test              # step 4: sanity tests on every test shot (~2-3 min)
 python -m src.heatmap                          # step 4: xG heat maps (< 1 min)
 streamlit run app/streamlit_app.py             # step 5: tactics board
+python -m src.export_assets                    # step 5: scenario ids + LogReg coefficients for the app
+python scripts/publish_model.py [--upload]     # step 5: weights + model card to the Hugging Face Hub
 
 python -m pytest tests -q                      # tests needing data/shots.pkl are skipped without it
 ```
@@ -406,7 +420,9 @@ src/
   board.py          # tactics board logic: pixel <-> yard mapping, TTA model, LogReg from JSON, warnings
   export_assets.py  # scenarios + LogReg coefficients for the app
 app/                # Streamlit app + drag-and-drop component (board.js / board.css), assets/*.json
-scripts/ui_smoke.py # optional end-to-end browser test of the board
+scripts/            # ui_smoke.py (browser test of the board), publish_model.py (HF Hub upload)
+deploy/hf_model/    # model card of the published weights
+assets/             # StatsBomb logo (attribution required by the data agreement)
   utils.py          # seeding, device, log file
   visualize.py      # pitch plots, channel plots, data overview
 tests/              # renderer vs. reference, mirror = row flip, models, sampler, bootstrap/AUC, Grad-CAM, shot edits
@@ -414,7 +430,15 @@ results/            # metric reports (markdown + csv); plots/ holds the figures 
 data/, models/      # downloaded data and trained weights (not in the repo)
 ```
 
-## Acknowledgements
+## License and acknowledgements
 
-Data: [StatsBomb Open Data](https://github.com/statsbomb/open-data). Pitch plots:
-[mplsoccer](https://github.com/andrewRowlinson/mplsoccer).
+The code is released under the [MIT License](LICENSE). The data is not: StatsBomb Open Data is
+provided under the [StatsBomb Public Data User Agreement](https://github.com/statsbomb/open-data/blob/master/LICENSE.pdf),
+which rules out commercial use of the data and of analysis derived from it and asks publications
+to credit StatsBomb with its logo. The published model weights are shared for non-commercial
+research and education under those terms.
+
+Data: [StatsBomb Open Data](https://github.com/statsbomb/open-data) (data provided by StatsBomb).
+Pitch plots: [mplsoccer](https://github.com/andrewRowlinson/mplsoccer).
+
+<img src="assets/statsbomb_logo.png" alt="StatsBomb" width="180">

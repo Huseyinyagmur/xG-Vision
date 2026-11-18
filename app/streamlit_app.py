@@ -1,4 +1,4 @@
-"""xG-Vision tactics board (step 5, MVP).
+"""xG-Vision tactics board (step 5).
 
     streamlit run app/streamlit_app.py
 
@@ -25,7 +25,6 @@ st.set_page_config(page_title="xG-Vision tactics board", page_icon="⚽", layout
 APP = Path(__file__).resolve().parent
 BODY_LABELS = {"foot": "Foot", "head": "Head"}
 ADD_KINDS = {"Defender": "defender", "Teammate": "teammate", "Goalkeeper": "goalkeeper"}
-HEAT_STEPS = {"2 yd": 2.0, "1 yd (slow)": 1.0}
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +32,22 @@ HEAT_STEPS = {"2 yd": 2.0, "1 yd (slow)": 1.0}
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner="Loading the model ...")
 def get_model() -> B.XGModel:
-    return B.XGModel(C.MODELS_DIR / C.BOARD_MODEL / "best.pt")
+    """Local checkpoint if it exists (trained here), otherwise the published one on the HF Hub."""
+    import os
+    import torch
+    device = torch.device(os.environ["XG_DEVICE"]) if os.environ.get("XG_DEVICE") else None   # e.g. XG_DEVICE=cpu
+    local = C.MODELS_DIR / C.BOARD_MODEL / "best.pt"
+    if local.exists():
+        return B.XGModel(local, device)
+    from huggingface_hub import hf_hub_download
+    return B.XGModel(hf_hub_download(C.HF_MODEL_REPO, C.HF_MODEL_FILE), device)
+
+
+def heat_steps() -> dict[str, float]:
+    """Map resolutions: on a CPU a 2 yd map takes ~30 s (2 threads), so 3 yd is the default there."""
+    if get_model().device.type == "cuda":
+        return {"2 yd": 2.0, "1 yd (slow)": 1.0}
+    return {"3 yd": 3.0, "2 yd (slow on CPU)": 2.0}
 
 
 @st.cache_resource
@@ -41,9 +55,10 @@ def get_logreg() -> B.LogRegJSON:
     return B.LogRegJSON.load(C.APP_ASSETS / "logreg.json")
 
 
-@st.cache_resource
-def get_scenarios() -> dict[str, dict]:
-    return {s["name"]: s for s in B.load_scenarios(C.APP_ASSETS / "scenarios.json")}
+@st.cache_resource(show_spinner="Fetching the real positions from StatsBomb Open Data ...")
+def get_scenarios() -> tuple[dict[str, dict], list[str]]:
+    scen, errors = B.load_scenarios(C.APP_ASSETS / "scenarios.json")
+    return {s["name"]: s for s in scen}, errors
 
 
 @st.cache_resource
@@ -80,7 +95,7 @@ DEFAULT_SCENARIO = "counter"
 
 
 def load_scenario(name: str):
-    sc = get_scenarios()[name]
+    sc = get_scenarios()[0][name]
     ss = st.session_state
     ss.scenario = ss.scenario_select = name
     ss.players = [dict(p) for p in sc["players"]]
@@ -113,10 +128,11 @@ def plural(n: int, word: str) -> str:
 
 
 ss = st.session_state
-scenarios = get_scenarios()
+scenarios, scenario_errors = get_scenarios()
 if "players" not in ss:                       # first run: ?scenario=<name> opens a given scenario
     start = st.query_params.get("scenario", DEFAULT_SCENARIO)
-    load_scenario(start if start in scenarios else DEFAULT_SCENARIO)
+    fallback = DEFAULT_SCENARIO if DEFAULT_SCENARIO in scenarios else next(iter(scenarios))
+    load_scenario(start if start in scenarios else fallback)
 
 # ---------------------------------------------------------------------------
 # Sidebar: board mode and help
@@ -149,8 +165,15 @@ with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
              format_func=BODY_LABELS.get)
     st.toggle("xG map", key="heat", help="Colour every spot by the xG a shot from there would get, "
               "with the other players where they are now.")
+    HEAT_STEPS = heat_steps()
+    if ss.get("heat_res") not in HEAT_STEPS:
+        ss.heat_res = next(iter(HEAT_STEPS))
     st.radio("Map resolution", list(HEAT_STEPS), key="heat_res", horizontal=True,
              disabled=not ss.get("heat"))
+
+if scenario_errors:
+    st.warning("Some real positions could not be fetched from StatsBomb Open Data (offline?): "
+               + "; ".join(scenario_errors), icon="📡")
 
 # The component's last state is in session state under its key: take the players from there
 # BEFORE drawing, so that the xG map below matches the board.
@@ -232,4 +255,10 @@ with st.container(horizontal=True, gap="medium", wrap=False, width=B.CANVAS_W + 
                         f"StatsBomb xG {meta['statsbomb_xg']:.3f}.")
             st.caption("Valid for the untouched scenario only.")
 
-st.caption("Data: StatsBomb Open Data. Model: SmallCNN (seed 42), step 2 of the project.")
+st.divider()
+with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
+    st.image(str(C.LOGO_PATH), width=150)
+    st.caption("Data: [StatsBomb Open Data](https://github.com/statsbomb/open-data), used under the StatsBomb "
+               "Public Data User Agreement (non-commercial). Real positions are fetched from StatsBomb's "
+               "repository at run time. Model: SmallCNN (seed 42), code MIT-licensed; "
+               "[project README](https://github.com/Huseyinyagmur/xG-Vision).")

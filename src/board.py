@@ -279,14 +279,49 @@ def colorbar_html(width: int = 260) -> str:
 # ---------------------------------------------------------------------------
 # Assets
 # ---------------------------------------------------------------------------
-def load_scenarios(path: str | Path = C.APP_ASSETS / "scenarios.json") -> list[dict]:
-    """[{name, label, body, players, meta}] with players in yards."""
-    out = []
+def shot_from_event(rec: dict) -> P.Shot:
+    """One shot as extracted by data_download (raw StatsBomb event) -> Shot, with the same
+    clipping as data_download.clean_shots, so the tensor equals the one used in evaluation."""
+    ff = np.clip(np.asarray(rec["freeze_frame"], np.float32).reshape(-1, 4), [0, 0, 0, 0],
+                 [C.PITCH_LENGTH, C.PITCH_WIDTH, 1, 1])
+    x = float(np.clip(rec["x"], 0, C.PITCH_LENGTH))
+    y = float(np.clip(rec["y"], 0, C.PITCH_WIDTH))
+    return P.Shot(x, y, ff, C.BODY_PART_MAP[rec["body_part"]])
+
+
+def fetch_event_shot(match_id: int, shot_id: str) -> dict:
+    """The shot's event record, downloaded from StatsBomb's own open-data repository (and
+    cached under data/cache/), so this project does not redistribute the raw data."""
+    from src.data_download import fetch_match_shots
+    for rec in fetch_match_shots(int(match_id)):
+        if rec["shot_id"] == shot_id:
+            return rec
+    raise KeyError(f"shot {shot_id} not found in match {match_id}")
+
+
+def load_scenarios(path: str | Path = C.APP_ASSETS / "scenarios.json", fetch=fetch_event_shot
+                   ) -> tuple[list[dict], list[str]]:
+    """Scenarios [{name, label, body, players, meta}] (players in yards) and a list of errors.
+    Synthetic scenarios carry their positions; real ones only (match_id, shot_id) and are
+    fetched with `fetch`. A real scenario that cannot be fetched (offline) is skipped."""
+    out, errors = [], []
     for s in json.loads(Path(path).read_text(encoding="utf-8")):
-        shot = P.Shot(s["x"], s["y"], np.array(s["freeze_frame"], np.float32).reshape(-1, 4), s["body"])
-        out.append({"name": s["name"], "label": s["label"], "body": s["body"],
-                    "players": players_from_shot(shot), "meta": s.get("meta", {})})
-    return out
+        if "freeze_frame" in s:                                   # synthetic
+            shot = P.Shot(s["x"], s["y"], np.array(s["freeze_frame"], np.float32).reshape(-1, 4), s["body"])
+            meta = {}
+        else:
+            try:
+                rec = fetch(s["match_id"], s["shot_id"])
+            except Exception as err:                              # network, missing shot ...
+                errors.append(f"{s['label']}: {type(err).__name__}: {err}")
+                continue
+            shot = shot_from_event(rec)
+            meta = {"shot_id": s["shot_id"], "competition": s["competition"], "season": s["season"],
+                    "outcome": rec["outcome"], "statsbomb_xg": float(rec["statsbomb_xg"]),
+                    "body_part": rec["body_part"], "technique": rec["technique"]}
+        out.append({"name": s["name"], "label": s["label"], "body": shot.body,
+                    "players": players_from_shot(shot), "meta": meta})
+    return out, errors
 
 
 def pitch_background_png() -> bytes:

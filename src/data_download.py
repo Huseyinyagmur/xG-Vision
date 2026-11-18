@@ -85,6 +85,7 @@ def _extract_shots(events: list[dict]) -> list[dict]:
 
 def fetch_match_shots(match_id: int) -> list[dict]:
     path = C.CACHE_DIR / f"{match_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return json.loads(path.read_text())
     shots = _extract_shots(_get_json(f"{C.STATSBOMB_RAW}/events/{match_id}.json"))

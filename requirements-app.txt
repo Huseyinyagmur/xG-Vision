@@ -1,8 +1,14 @@
 # Tactics board (step 5): `streamlit run app/streamlit_app.py`
 # On a CPU-only machine install the CPU build of PyTorch first:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# Without models/small_cnn/best.pt the weights are downloaded from the Hugging Face Hub
+# (huseyinyagmur/xg-vision-smallcnn); the real positions are fetched from StatsBomb Open Data.
 torch>=2.2
 numpy
+pandas
 matplotlib
 mplsoccer>=1.2
+requests
+tqdm
+huggingface_hub
 streamlit==1.67.0

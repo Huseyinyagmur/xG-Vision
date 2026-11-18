@@ -39,7 +39,7 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
    ve baseline (sadece mesafe + açı ile lojistik regresyon) ile karşılaştırma; ilginç test pozisyonları; Grad-CAM.
 4. ✅ **Mantık testleri:** şutçuyu yaklaştır/uzaklaştır, araya savunmacı koy, kaleciyi çıkar → xG beklenen
    yönde değişiyor mu? Şutçuyu ceza sahasının her noktasına koyup xG ısı haritası.
-5. ⏭️ **İnteraktif taktik tahtası:** Streamlit veya Gradio, oyuncuları sürükle-bırak → anlık xG.
+5. ✅ **İnteraktif taktik tahtası:** Streamlit veya Gradio, oyuncuları sürükle-bırak → anlık xG.
 6. (İsteğe bağlı) Yayın karesi → YOLO ile oyuncu tespiti → saha anahtar noktaları + homografi → kuşbakışı → xG.
 
 ### Değerlendirme ilkeleri
@@ -48,7 +48,7 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
   sonradan kalibre et ya da düz BCE tercih et.
 - Bölme **maç bazında** yapılır, aynı maçın şutları farklı bölümlerde olamaz (`split` sütunu sabit, değiştirme).
 
-## Mevcut durum (5. adım: tahta + ısı haritası katmanı yerelde hazır; sırada HF yayını)
+## Mevcut durum (5. adım tamamlandı; HF Hub yüklemesi + push kullanıcı onayını bekliyor)
 
 1. adım `0eff913` ile push edildi. 2. adım commit'leri: `06d6435` (CLAUDE.md), `9484875` (render
 hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım: `6d72da3` (push edildi). 4. adım: `083d3e5` (push edildi).
@@ -250,7 +250,20 @@ freeze_frame (np.ndarray N×4: [x, y, teammate, is_gk]), n_players, has_gk, is_g
   %5,9, 6–10 yd önde %29 gol) → karıştırıcı. Tahtada kaleci 3+ yd öndeyse bilgi notu çıkıyor.
 - Isı haritası katmanı: `board.xg_map` (TTA, 128'lik parçalar), karekök renk ölçeği, düşük xG saydam,
   kenar hücreleri gri; şutçu dışındaki oyunculara göre `st.cache_data`. 2 yd ~1,5 sn, 1 yd ~5 sn (yerel GPU).
-- Sırada: HF Spaces + HF Hub model deposu (kullanıcı onayıyla, hesap adımları kullanıcıda).
+- `ae1934f` (yalnızca ekran görüntüsü yeniden adlandırma, yanlışlıkla) + `2f9503b` (harita + düzeltmeler), push edildi.
+
+### 5. adım: yayın kararları (18 Kasım 2026)
+- HF hesabı (huseyinyagmur) PRO değil; HF belgelerine göre Docker/Gradio Space ücretli plan istiyor →
+  **kullanıcı kararı: canlı demo yok.** Sadece HF Hub model deposu `huseyinyagmur/xg-vision-smallcnn`
+  (`small_cnn.pt` = models/small_cnn/best.pt, model kartı `deploy/hf_model/README.md`, logo, kalibrasyon grafiği).
+  Yükleme: `python scripts/publish_model.py --upload` (mevcut `hf auth` girişi; token'ı asla yazdırma/dosyaya yazma).
+- **StatsBomb Public Data User Agreement:** 1.2.1 veriyi dağıtmak yasak → `app/assets/scenarios.json` artık yalnızca
+  match_id/shot_id tutuyor; konumlar açılışta StatsBomb'un reposundan çekiliyor (`board.load_scenarios`,
+  data/cache'e önbellek). Eski sürüm git geçmişinde duruyor (history rewrite yok). 1.2.2 ticari kullanım yok.
+  1.4 yayınlarda StatsBomb logosu: `assets/statsbomb_logo.png` (open-data reposundaki resmi PNG, 600 px).
+- Kod MIT (`LICENSE`); ağırlıklar "other" lisans, StatsBomb sözleşmesine bağlı, ticari olmayan kullanım.
+- CPU ölçümü (2 thread): tek xG ~10 ms, harita 2 yd ~27 sn, 1 yd ~87 sn → CPU'da seçenekler 3 yd (varsayılan) /
+  2 yd; GPU'da 2 yd / 1 yd. `XG_DEVICE=cpu` ile CPU zorlanabilir. Ağırlık yerelde yoksa HF Hub'dan iner.
 
 ### 5. adım için notlar
 - Taktik tahtası `perturb.Shot` + `render_shot` + `load_checkpoint` ile kurulabilir; kenar artefaktı nedeniyle

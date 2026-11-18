@@ -36,17 +36,36 @@ def test_roundtrip_render_identical_synthetic():
     assert len(back.ff) == 3                                  # the player at x = 55 is outside the half
 
 
-@pytest.mark.skipif(not SCENARIOS.exists(), reason="run `python -m src.export_assets` first")
-def test_roundtrip_render_identical_real_scenarios():
+def test_scenario_file_has_no_raw_positions():
+    """StatsBomb Public Data User Agreement 1.2.1: real positions are fetched, not shipped."""
     raw = json.loads(SCENARIOS.read_text(encoding="utf-8"))
     assert len(raw) == 6 and raw[0]["name"] == "empty"
-    for r in raw:
-        ff = np.array(r["freeze_frame"], np.float32).reshape(-1, 4)
-        s = P.Shot(r["x"], r["y"], ff, r["body"])
-        back = _roundtrip(s)
-        np.testing.assert_allclose(back.image(), render_shot(r["x"], r["y"], ff), atol=1e-5,
-                                   err_msg=r["name"])
-        assert back.body == r["body"]
+    for r in raw[1:]:
+        assert set(r) == {"name", "label", "match_id", "shot_id", "competition", "season"}
+
+
+@pytest.mark.skipif(not C.SHOTS_PATH.exists(), reason="needs data/shots.pkl (and data/cache or network)")
+def test_fetched_scenarios_render_like_the_evaluation_data():
+    """Scenario fetched from StatsBomb -> board players -> canvas JSON -> shot renders exactly
+    like the same shot in shots.pkl (the tensor the model was evaluated on)."""
+    from src.dataset import load_shots
+    shots = load_shots().set_index("shot_id")
+    scen, errors = B.load_scenarios(SCENARIOS)
+    assert not errors and len(scen) == 6
+    for s in scen[1:]:
+        row = shots.loc[s["meta"]["shot_id"]]
+        back = _roundtrip(B.shot_from_players(s["players"], s["body"]))
+        np.testing.assert_allclose(back.image(), render_shot(row.x, row.y, row.freeze_frame), atol=1e-5,
+                                   err_msg=s["name"])
+        assert back.body == C.BODY_PART_MAP[row.body_part]
+        assert s["meta"]["statsbomb_xg"] == pytest.approx(row.statsbomb_xg)
+
+
+def test_scenarios_offline_keep_the_synthetic_one():
+    def offline(match_id, shot_id):
+        raise ConnectionError("no network")
+    scen, errors = B.load_scenarios(SCENARIOS, fetch=offline)
+    assert [s["name"] for s in scen] == ["empty"] and len(errors) == 5
 
 
 def test_shot_from_players_errors():
