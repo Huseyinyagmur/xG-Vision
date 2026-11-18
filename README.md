@@ -20,7 +20,7 @@ the player positions StatsBomb records at the moment of the shot (*freeze frames
 | 2 | Models: small CNN from scratch vs. ImageNet ResNet18 (6-channel first conv), body part as an extra input, training loop with early stopping | ✅ done |
 | 3 | Evaluation on the test split: log loss / Brier / ROC-AUC, calibration, comparison with StatsBomb xG and a distance + angle logistic regression, interesting shots, Grad-CAM | ✅ done |
 | 4 | Sanity tests: move the shooter, add a defender in the shooting lane, remove the goalkeeper; xG heat map over the box | ✅ done |
-| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | 🚧 MVP runs locally; heat-map layer and online demo next |
+| 5 | Interactive tactics board (Streamlit or Gradio): drag players, get xG live | 🚧 runs locally (incl. xG map layer); online demo next |
 | 6 | (optional) Broadcast frame → player detection + pitch homography → bird's-eye view → xG | ⏳ planned |
 
 ## Data
@@ -264,6 +264,18 @@ Real inconsistencies (in-distribution situations):
 4. **Left/right asymmetry** of up to 0.12 xG on the empty pitch (at (113, 33)) and 0.15 on real
    shots, see above.
 
+5. **Goalkeeper position is confounded with goals.** Moving only the goalkeeper 2–4 yd off the line
+   towards the shooter raises xG for more than 90% of test shots from beyond 8 yd (mean xG of
+   11,659 shots: 0.072 → 0.094 → 0.110 at 2 and 4 yd). It happens in single situations as well:
+   0.19 → 0.49 on the empty pitch (6 yd), 0.020 → 0.033 in the counter frame and 0.078 → 0.118 in
+   the crowded frame (2 yd). Only a keeper right next to the shooter lowers it. The training data
+   explain why: at the same shot distance, shots with the keeper further off the line go in far
+   more often (12–18 yd: 5.9% with the keeper within 1 yd of the line, 29% at 6–10 yd; StatsBomb
+   xG shows the same pattern). A keeper off the line usually means a keeper out of position
+   (rebounds, cut-backs, rushed one-on-ones), so the model has learned an association, not the
+   effect of a keeper deliberately narrowing the angle. On the tactics board, moving only the
+   keeper therefore gives misleading answers.
+
 Out-of-distribution results, reported for completeness: removing the goalkeeper raises xG for
 99% of shots (+0.11) and the keeper-only maps are far above LogReg; both are plausible in
 direction but the model has (almost) never seen these situations. Headers from 25+ yd behave
@@ -274,14 +286,20 @@ to the shot line also pushes the keeper towards the goal line; moves that would 
 skipped (3,303 shots), and the largest wrong-direction 3b cases are of this kind
 ([`sanity_failures_test.png`](results/plots/sanity_failures_test.png)).
 
-## Tactics board (step 5, MVP)
+## Tactics board (step 5)
 
 A Streamlit app where players can be dragged on a bird's-eye view of the attacking half; the
 CNN's xG updates after every move. xG is always mirror-averaged (the situation and its mirror
 image), the LogReg baseline is shown next to it, and the panel shows the change caused by the
 last move. Five real test-set situations (chosen by rule) and an empty pitch are built in.
-Warnings appear where step 4 found the model unreliable: the goal-line edge outside the posts,
-no goalkeeper, a goalkeeper alone, headers from 25+ yd.
+Warnings appear where step 4 found the model unreliable: no goalkeeper, a goalkeeper alone,
+headers from 25+ yd, and the goal-line edge outside the posts, where the xG value is hidden
+altogether. A note appears when the keeper is off the line (see limitation 5 above).
+
+The optional **xG map** layer colours every spot by the xG a shot from there would get with the
+other players where they are (2 yd grid by default, 1 yd on request; square-root colour scale).
+It only depends on the non-shooters, so it is cached per defence and dragging the shooter does
+not recompute it (2 yd: ~1.5 s, 1 yd: ~5 s on an RTX 4050 Laptop GPU).
 
 ```bash
 pip install -r requirements-app.txt
@@ -294,7 +312,7 @@ The drag-and-drop board is a small custom Streamlit component (`app/board.js`, c
 no build step): *Move* mode drags players, *Add* mode places a defender, teammate or goalkeeper
 with a click, and a double-click removes a player.
 
-![Tactics board](results/plots/board_mvp.png)
+![Tactics board with the xG map layer](results/plots/board.png)
 
 ## Plots
 

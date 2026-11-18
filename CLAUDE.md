@@ -48,7 +48,7 @@ Kullanıcının önceki projesi (yapı referansı): https://github.com/Huseyinya
   sonradan kalibre et ya da düz BCE tercih et.
 - Bölme **maç bazında** yapılır, aynı maçın şutları farklı bölümlerde olamaz (`split` sütunu sabit, değiştirme).
 
-## Mevcut durum (5. adım: MVP hazır, kullanıcı geri bildirimi bekleniyor)
+## Mevcut durum (5. adım: tahta + ısı haritası katmanı yerelde hazır; sırada HF yayını)
 
 1. adım `0eff913` ile push edildi. 2. adım commit'leri: `06d6435` (CLAUDE.md), `9484875` (render
 hızlandırma), `3439ffc` (modeller + eğitim döngüsü), `f7f3115` (README/CLAUDE.md, push edildi). 3. adım: `6d72da3` (push edildi). 4. adım: `083d3e5` (push edildi).
@@ -238,7 +238,19 @@ freeze_frame (np.ndarray N×4: [x, y, teammate, is_gk]), n_players, has_gk, is_g
 - JS bileşeni oyuncuları kendi tutar, yalnızca `version` değişince (senaryo yükle / sıfırla) Python'dan alır.
 - Testler: yön testi (senaryo → tuval → geri → render_shot aynı), Playwright: sürükleme mesafesi, ekleme, silme,
   kesilmeme (1500 ve 1100 px). Görsel kontrol: plot_freeze_frame ile aynı diziliş (90° sola döndürülmüş).
-- Sırada (kullanıcı geri bildiriminden sonra): ısı haritası katmanı (2 yd, isteğe bağlı 1 yd), HF Spaces + HF Hub model deposu.
+- MVP push edildi (`4750546`). Kullanıcı geri bildirimiyle düzeltilenler: vücut bölgesi + senaryo seçicileri ana
+  panelde, xG etiketinde vücut bölgesi; varsayılan senaryo `counter`; kenar uyarısında xG "—" (değer üstü çizili);
+  tekil/çoğul; tahta + panel tek yatay container'da (en fazla 640 + 340 px, dar ekranda tahta küçülür).
+- **Hata (bulundu, düzeltildi):** vücut bölgesi radyosu anahtarsızdı ve `index`'i her çalıştırmada `ss.body`'den
+  hesaplanıyordu; Streamlit bunu yeni widget sayıp tıklamaları kaybediyor, bayat değer geri dönüyordu (kullanıcının
+  gördüğü LogReg 0,151 → 0,047 = ayak → kafa). Kural: widget'lar `key` ile; değer yalnızca callback'te değişir.
+  Bileşen durumu `st.session_state["board"]`'dan bileşen çizilmeden ÖNCE okunuyor (harita güncel kalsın diye).
+- **Model bulgusu (README limitation 5):** kaleciyi öne almak xG'yi artırıyor (boş saha 0,19 → 0,49; test setinde
+  8+ yd şutların %90'ından fazlasında; ort. 0,072 → 0,110 @ 4 yd). Veride de aynı ilişki var (12–18 yd: kaleci çizgide
+  %5,9, 6–10 yd önde %29 gol) → karıştırıcı. Tahtada kaleci 3+ yd öndeyse bilgi notu çıkıyor.
+- Isı haritası katmanı: `board.xg_map` (TTA, 128'lik parçalar), karekök renk ölçeği, düşük xG saydam,
+  kenar hücreleri gri; şutçu dışındaki oyunculara göre `st.cache_data`. 2 yd ~1,5 sn, 1 yd ~5 sn (yerel GPU).
+- Sırada: HF Spaces + HF Hub model deposu (kullanıcı onayıyla, hesap adımları kullanıcıda).
 
 ### 5. adım için notlar
 - Taktik tahtası `perturb.Shot` + `render_shot` + `load_checkpoint` ile kurulabilir; kenar artefaktı nedeniyle

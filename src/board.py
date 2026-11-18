@@ -100,10 +100,15 @@ def from_canvas(items: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Warnings (step 4 findings)
 # ---------------------------------------------------------------------------
+def on_goal_line_edge(shot: P.Shot) -> bool:
+    """Shooter within 1.5 yd of the goal line and outside the posts (step 4 edge artefact)."""
+    return shot.x >= C.EDGE_WARN_X and abs(shot.y - C.GOAL_CENTER[1]) > POST_HALF
+
+
 def warnings_for(shot: P.Shot) -> list[str]:
     """Situations where the model should not be trusted."""
     w = []
-    if shot.x >= C.EDGE_WARN_X and abs(shot.y - C.GOAL_CENTER[1]) > POST_HALF:
+    if on_goal_line_edge(shot):
         w.append("Shooter is on the goal-line edge outside the posts: the model overrates such shots "
                  "(step 4 found xG ≈ 0.45 even 28 yd wide). Do not trust this value.")
     if not (shot.ff[:, 3] == 0).any():
@@ -115,6 +120,19 @@ def warnings_for(shot: P.Shot) -> list[str]:
         else:
             w.append(f"Out of distribution: {reason} (almost absent from the training data).")
     return w
+
+
+KEEPER_NOTE_YD = 3.0
+
+
+def keeper_note(shot: P.Shot) -> str | None:
+    """Step 5 finding: the model's response to the keeper's position is confounded."""
+    k = shot.gk_index()
+    if k is None or C.GOAL_X - shot.ff[k, 0] <= KEEPER_NOTE_YD:
+        return None
+    return (f"The goalkeeper is {C.GOAL_X - shot.ff[k, 0]:.0f} yd off the line. In the data a keeper off the "
+            "line often means a keeper out of position, so the model raises xG when the keeper steps forward; "
+            "it has not learned the effect of narrowing the angle.")
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +190,90 @@ class LogRegJSON:
         onehot = np.array([[b == g for g in C.BODY_PART_GROUPS] for b in bodies], np.float64)
         z = ((np.column_stack([d, a, onehot]) - self.mean) / self.scale) @ self.coef + self.intercept
         return 1.0 / (1.0 + np.exp(-z))
+
+
+# ---------------------------------------------------------------------------
+# xG map layer: the shooter moved over a grid, everyone else fixed
+# ---------------------------------------------------------------------------
+HEAT_VMAX = 0.6
+HEAT_TICKS = (0.0, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6)
+
+
+def heat_norm(v):
+    """Square-root colour scale: most xG values are small, so 0.01-0.1 needs room on the scale."""
+    return np.sqrt(np.clip(np.asarray(v, np.float64) / HEAT_VMAX, 0.0, 1.0))
+
+
+def heat_axes(step: float) -> tuple[np.ndarray, np.ndarray]:
+    xs = np.arange(C.HEATMAP_X[0], C.HEATMAP_X[1] + 1e-9, step)
+    ys = np.arange(C.HEATMAP_Y[0], C.HEATMAP_Y[1] + 1e-9, step)
+    return xs, ys
+
+
+def xg_map(model: XGModel, players: list[dict], body: str, step: float = 2.0, chunk: int = 128) -> dict:
+    """Mirror-averaged xG with the shooter at every grid point (the other players stay put).
+    Returns {xs, ys, step, xg (len(ys), len(xs)), unreliable (same shape, goal-line edge)}."""
+    base = shot_from_players(players, body)
+    xs, ys = heat_axes(step)
+    shots = [P.place_shooter(base, x, y) for y in ys for x in xs]
+    xg = []
+    for i in range(0, len(shots), chunk):            # chunks keep memory small (2 images per shot)
+        xg += [p.xg for p in model.predict_many(shots[i:i + chunk])]
+    shape = (len(ys), len(xs))
+    return {"xs": xs, "ys": ys, "step": step, "xg": np.array(xg).reshape(shape),
+            "unreliable": np.array([on_goal_line_edge(s) for s in shots]).reshape(shape)}
+
+
+def heat_colormap():
+    import matplotlib
+    return matplotlib.colormaps["magma"]
+
+
+def overlay_rgba(m: dict, alpha: tuple[float, float] = (0.12, 0.78)) -> np.ndarray:
+    """(CANVAS_H, CANVAS_W, 4) uint8 image: one square cell per grid point, colour = xG on a
+    square-root scale, opacity rising with xG so that the pitch stays visible where xG is low;
+    unreliable cells (goal-line edge) are grey."""
+    cmap = heat_colormap()
+    img = np.zeros((CANVAS_H, CANVAS_W, 4), np.uint8)
+    half = m["step"] * PPY / 2
+    for i, y in enumerate(m["ys"]):
+        for j, x in enumerate(m["xs"]):
+            px, py = to_px(x, y)
+            r0, r1 = int(round(py - half)), int(round(py + half))
+            c0, c1 = int(round(px - half)), int(round(px + half))
+            r0, c0 = max(r0, 0), max(c0, 0)
+            if m["unreliable"][i, j]:
+                rgba = (150, 150, 150, int(255 * alpha[1]))
+            else:
+                v = float(heat_norm(m["xg"][i, j]))
+                r, g, b, _ = cmap(0.15 + 0.85 * v)          # skip the near-black start of magma
+                rgba = (int(255 * r), int(255 * g), int(255 * b), int(255 * (alpha[0] + (alpha[1] - alpha[0]) * v)))
+            img[r0:r1, c0:c1] = rgba
+    return img
+
+
+def composite_png(background_png: bytes, overlay: np.ndarray) -> bytes:
+    from PIL import Image
+    bg = Image.open(io.BytesIO(background_png)).convert("RGBA")
+    out = Image.alpha_composite(bg, Image.fromarray(overlay, "RGBA"))
+    buf = io.BytesIO()
+    out.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def colorbar_html(width: int = 260) -> str:
+    """HTML legend of the map colours with tick labels at their square-root positions."""
+    cmap = heat_colormap()
+    stops = []
+    for k in range(11):
+        r, g, b, _ = cmap(0.15 + 0.85 * k / 10)
+        stops.append(f"rgb({int(255 * r)},{int(255 * g)},{int(255 * b)}) {10 * k}%")
+    ticks = "".join(
+        f"<span style='position:absolute;left:{100 * float(heat_norm(v)):.1f}%;transform:translateX(-50%)'>"
+        f"{v:g}{'+' if v == HEAT_VMAX else ''}</span>" for v in HEAT_TICKS)
+    return (f"<div style='font-size:0.75rem;color:#666;width:{width}px;margin:4px 0 18px 8px'>"
+            f"<div style='height:10px;border-radius:2px;background:linear-gradient(to right, {', '.join(stops)})'></div>"
+            f"<div style='position:relative;height:1em'>{ticks}</div></div>")
 
 
 # ---------------------------------------------------------------------------

@@ -4,8 +4,9 @@
     python scripts/ui_smoke.py [--channel msedge] [--out DIR]
 
 Starts the app, then: reads xG, drags the shooter towards goal (xG must change), switches to
-Add mode and adds a defender (one more player), removes it with a double-click, and saves
-screenshots of every real scenario to --out. Not part of pytest (it needs a browser).
+Add mode and adds a defender (one more player), removes it with a double-click, checks that
+the body-part radio registers every click, turns the xG map layer on, and saves screenshots of
+every scenario to --out. Not part of pytest (it needs a browser).
 """
 from __future__ import annotations
 
@@ -131,7 +132,30 @@ def main() -> int:
             checks["double-click removes it"] = n_players() == n0
             page.screenshot(path=str(out / "after_remove.png"))
 
-            # 4) screenshots of every scenario (fresh session each)
+            # 4) body part radio: every click must register (regression: an index-driven radio
+            #    used to drop clicks and flip the body part); LogReg depends only on it here
+            def logreg() -> str:
+                return page.locator('[data-testid="stMetricValue"]').nth(1).inner_text()
+
+            seen = []
+            for lab in ("Head", "Foot", "Head", "Foot"):
+                before = logreg()
+                page.get_by_text(lab, exact=True).first.click()
+                t0 = time.time()
+                while logreg() == before and time.time() - t0 < 15:
+                    page.wait_for_timeout(300)
+                seen.append(logreg())
+            checks["body part radio registers every click"] = (
+                seen[0] == seen[2] and seen[1] == seen[3] and seen[0] != seen[1])
+            page.screenshot(path=str(out / "layout.png"))
+
+            # 5) xG map layer: appears, and the background changes
+            page.get_by_text("xG map", exact=True).first.click()
+            page.get_by_text("Best spot", exact=False).first.wait_for(timeout=120000)
+            checks["xG map layer appears"] = True
+            page.screenshot(path=str(out / "xg_map.png"))
+
+            # 6) screenshots of every scenario (fresh session each)
             for name in json.loads((ROOT / "app" / "assets" / "scenarios.json").read_text(encoding="utf-8")):
                 pg = browser.new_page(viewport={"width": 1500, "height": 1000})
                 pg.goto(f"{base}/?scenario={name['name']}")

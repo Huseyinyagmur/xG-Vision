@@ -102,3 +102,42 @@ def test_logreg_json_matches_sklearn():
     body = test.body_part.map(C.BODY_PART_MAP).to_numpy()
     np.testing.assert_allclose(lr.predict(test.x.to_numpy(), test.y.to_numpy(), body),
                                ref.predict_proba(design_matrix(test, True))[:, 1], rtol=1e-9)
+
+
+def _fake_xgmodel():
+    import torch
+    m = B.XGModel.__new__(B.XGModel)
+    m.torch, m.device, m.model = torch, torch.device("cpu"), _FakeModel()
+    return m
+
+
+def test_xg_map_grid_and_edge_mask():
+    players = B.players_from_shot(P.Shot(100.0, 30.0, FF, "foot"))
+    m = B.xg_map(_fake_xgmodel(), players, "foot", step=1.0, chunk=500)
+    xs, ys = B.heat_axes(1.0)
+    assert m["xg"].shape == (len(ys), len(xs)) == m["unreliable"].shape
+    assert xs[0] == C.HEATMAP_X[0] and xs[-1] == C.HEATMAP_X[1] and ys[-1] == C.HEATMAP_Y[1]
+    # the edge mask marks exactly x >= 118.5 outside the posts
+    X, Y = np.meshgrid(xs, ys)
+    np.testing.assert_array_equal(m["unreliable"], (X >= C.EDGE_WARN_X) & (np.abs(Y - 40) > 4))
+    # the map does not depend on where the shooter was
+    moved = [dict(p, x=90.0, y=60.0) if p["kind"] == "shooter" else p for p in players]
+    np.testing.assert_allclose(B.xg_map(_fake_xgmodel(), moved, "foot", 1.0, 500)["xg"], m["xg"])
+
+
+def test_overlay_cells_land_on_their_grid_points():
+    xs, ys = B.heat_axes(2.0)
+    xg = np.zeros((len(ys), len(xs)))
+    xg[3, 5] = B.HEAT_VMAX                                     # one hot cell
+    m = {"xs": xs, "ys": ys, "step": 2.0, "xg": xg, "unreliable": np.zeros_like(xg, bool)}
+    img = B.overlay_rgba(m)
+    assert img.shape == (B.CANVAS_H, B.CANVAS_W, 4)
+    px, py = (int(v) for v in B.to_px(xs[5], ys[3]))
+    hot = img[py, px, :3].astype(int).sum()
+    cx, cy = (int(v) for v in B.to_px(xs[0], ys[0]))
+    cold = img[cy, cx, :3].astype(int).sum()
+    assert hot > cold + 300
+    png = B.composite_png(B.pitch_background_png(), img)
+    from PIL import Image
+    import io
+    assert Image.open(io.BytesIO(png)).size == (B.CANVAS_W, B.CANVAS_H)
