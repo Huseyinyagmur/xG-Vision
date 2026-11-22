@@ -2,7 +2,7 @@
 
 ## Project overview (25 s)
 
-VIDEO_HERE
+https://github.com/user-attachments/assets/9270343e-3f32-401a-9bf7-ccb810e2892d
 
 **A 1.2 M-parameter CNN that reads only player positions and the body part gets within 0.005 log
 loss of StatsBomb's own xG model and clearly beats distance/angle baselines, but StatsBomb's model
