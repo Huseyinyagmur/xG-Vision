@@ -1,16 +1,17 @@
 # xG-Vision: expected goals from a bird's-eye picture of the shot
 
-<p align="center">
-  <img src="results/plots/board_demo.gif" alt="Tactics board: a defender is dragged onto the shot line, the goalkeeper steps aside, the xG map is switched on and the shooter moves to a better spot" width="800">
-</p>
+## Project overview (25 s)
+
+VIDEO_HERE
 
 **A 1.2 M-parameter CNN that reads only player positions and the body part gets within 0.005 log
 loss of StatsBomb's own xG model and clearly beats distance/angle baselines, but StatsBomb's model
 is still significantly better on held-out matches.**
 
 Every shot becomes a 6-channel bird's-eye image of the attacking half built from the player
-positions StatsBomb records at the moment of the shot (*freeze frames*). The interactive
-tactics board above lets you drag players and see the xG change live.
+positions StatsBomb records at the moment of the shot (*freeze frames*). The
+[interactive tactics board](#run-the-tactics-board-no-data-download-or-training-needed) lets you
+drag players and see the xG change live.
 
 | Test split (14,166 shots, 597 matches) | Log loss | Brier | ROC-AUC |
 |---|---|---|---|
@@ -194,6 +195,10 @@ python -m venv .venv
 
 ### Run the tactics board (no data download or training needed)
 
+<p align="center">
+  <img src="results/plots/board_demo.gif" alt="Tactics board: a defender is dragged onto the shot line, the goalkeeper steps aside, the xG map is switched on and the shooter moves to a better spot" width="800">
+</p>
+
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu   # or the CUDA build
 pip install -r requirements-app.txt
@@ -232,7 +237,7 @@ python -m src.sanity --split test             # sanity tests on every test shot 
 python -m src.heatmap                         # xG heat maps
 python -m src.export_assets                   # scenario ids + LogReg coefficients for the board
 python scripts/publish_model.py [--upload]    # weights + model card to the Hugging Face Hub
-python scripts/record_demo.py                 # the GIF at the top (needs playwright)
+python scripts/record_demo.py                 # the tactics board GIF (needs playwright)
 python scripts/ui_smoke.py                    # browser test of the board (needs playwright)
 python -m pytest tests -q                     # tests needing data/shots.pkl are skipped without it
 ```
